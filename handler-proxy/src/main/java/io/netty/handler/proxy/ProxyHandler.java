@@ -187,8 +187,7 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
                 @Override
                 public void run() {
                     if (!connectPromise.isDone()) {
-                        setConnectFailure(
-                                new ProxyConnectException("proxyAddress: " + proxyAddress + ", timeout"));
+                        setConnectFailure(new ProxyConnectException(exceptionMessage("timeout")));
                     }
                 }
             }, connectTimeoutMillis, TimeUnit.MILLISECONDS);
@@ -221,8 +220,7 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
             ctx.fireChannelInactive();
         } else {
             // Disconnected before connected to the destination.
-            setConnectFailure(
-                    new ProxyConnectException("disconnected from proxy server before connected to the destination"));
+            setConnectFailure(new ProxyConnectException(exceptionMessage("disconnected")));
         }
     }
 
@@ -294,11 +292,38 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
             connectTimeoutFuture.cancel(false);
         }
 
+        if (!(cause instanceof ProxyConnectException)) {
+            cause = new ProxyConnectException(
+                    exceptionMessage(null), cause);
+        }
+
         if (connectPromise.tryFailure(cause)) {
             failPendingWrites(cause);
             ctx.fireExceptionCaught(cause);
             ctx.close();
         }
+    }
+
+    /**
+     * Decorates the specified exception message with the common information such as the current protocol,
+     * authentication scheme, proxy address, and destination address.
+     */
+    protected final String exceptionMessage(String msg) {
+        StringBuilder buf = new StringBuilder(128 + msg.length());
+
+        buf.append(protocol());
+        buf.append(", ");
+        buf.append(authScheme());
+        buf.append(", ");
+        buf.append(proxyAddress);
+        buf.append(" => ");
+        buf.append(destinationAddress);
+        if (msg != null) {
+            buf.append(", ");
+            buf.append(msg);
+        }
+
+        return buf.toString();
     }
 
     @Override

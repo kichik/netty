@@ -34,6 +34,7 @@ import io.netty.handler.codec.socksx.v5.Socks5InitResponse;
 import io.netty.handler.codec.socksx.v5.Socks5InitResponseDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5MessageEncoder;
 import io.netty.util.NetUtil;
+import io.netty.util.internal.StringUtil;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -107,9 +108,7 @@ public final class Socks5ProxyHandler extends ProxyHandler {
 
             if (authScheme != res.authScheme()) {
                 // Server did not accept the requested authentication scheme.
-                throw new ProxyConnectException(
-                        "proxyAddress: " + proxyAddress() +
-                        ", authScheme: " + authScheme + " (expected: " + res.authScheme() + ')');
+                throw new ProxyConnectException(exceptionMessage("mismatching authScheme: " + res.authScheme()));
             }
 
             if (authScheme == Socks5AuthScheme.AUTH_PASSWORD) {
@@ -127,8 +126,7 @@ public final class Socks5ProxyHandler extends ProxyHandler {
             // Received an authentication response from the server.
             Socks5AuthResponse res = (Socks5AuthResponse) response;
             if (res.authStatus() != Socks5AuthStatus.SUCCESS) {
-                throw new ProxyConnectException(
-                        "proxyAddress: " + proxyAddress() + ", authStatus: " + res.authStatus());
+                throw new ProxyConnectException(exceptionMessage("authStatus: " + res.authStatus()));
             }
 
             sendConnectCommand(ctx);
@@ -138,7 +136,7 @@ public final class Socks5ProxyHandler extends ProxyHandler {
         // This should be the last message from the server.
         Socks5CmdResponse res = (Socks5CmdResponse) response;
         if (res.cmdStatus() != Socks5CmdStatus.SUCCESS) {
-            throw new ProxyConnectException("proxyAddress: " + proxyAddress() + ", status: " + res.cmdStatus());
+            throw new ProxyConnectException(exceptionMessage("cmdStatus: " + res.cmdStatus()));
         }
 
         return true;
@@ -168,7 +166,8 @@ public final class Socks5ProxyHandler extends ProxyHandler {
             } else if (NetUtil.isValidIpV6Address(rhost)) {
                 addrType = Socks5AddressType.IPv6;
             } else {
-                throw new ProxyConnectException("unknown address type: " + rhost);
+                throw new ProxyConnectException(
+                        exceptionMessage("unknown address type: " + StringUtil.simpleClassName(rhost)));
             }
         }
 

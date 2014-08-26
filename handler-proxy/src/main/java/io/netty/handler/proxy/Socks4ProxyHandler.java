@@ -97,6 +97,6 @@ public final class Socks4ProxyHandler extends ProxyHandler {
             return true;
         }
 
-        throw new ProxyConnectException("proxyAddress: " + proxyAddress() + ", status: " + status);
+        throw new ProxyConnectException(exceptionMessage("cmdStatus: " + status));
     }
 }

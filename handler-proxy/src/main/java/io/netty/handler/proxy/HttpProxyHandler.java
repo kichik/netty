@@ -131,7 +131,7 @@ public final class HttpProxyHandler extends ProxyHandler {
         if (response instanceof HttpResponse) {
             HttpResponse res = (HttpResponse) response;
             if (res.status().code() != 200) {
-                throw new ProxyConnectException("proxyAddress: " + proxyAddress() + ", response: " + res);
+                throw new ProxyConnectException(exceptionMessage("response: " + res));
             }
         }
 
