@@ -224,7 +224,6 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
             setConnectFailure(
                     new ProxyConnectException("disconnected from proxy server before connected to the destination"));
         }
-
     }
 
     @Override
@@ -278,7 +277,9 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
         }
 
         if (connectPromise.trySuccess(ctx.channel())) {
-            ctx.fireUserEventTriggered(newUserEvent());
+            ctx.fireUserEventTriggered(
+                    new ProxyConnectionEvent(protocol(), authScheme(), proxyAddress, destinationAddress));
+
             writePendingWrites();
 
             if (flushedPrematurely) {
@@ -298,13 +299,6 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
             ctx.fireExceptionCaught(cause);
             ctx.close();
         }
-    }
-
-    /**
-     * Returns a user event that notifies that the connection to the destination has been established successfully.
-     */
-    private ProxyConnectionEvent newUserEvent() {
-        return new ProxyConnectionEvent(protocol(), authScheme(), proxyAddress, destinationAddress);
     }
 
     @Override
