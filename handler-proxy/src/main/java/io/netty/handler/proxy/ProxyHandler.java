@@ -211,12 +211,12 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
      * Sends the specified message to the proxy server.  Use this method to send a response to the proxy server in
      * {@link #handleResponse(ChannelHandlerContext, Object)}.
      */
-    protected void sendToProxyServer(Object msg) {
+    protected final void sendToProxyServer(Object msg) {
         ctx.writeAndFlush(msg).addListener(writeListener);
     }
 
     @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+    public final void channelInactive(ChannelHandlerContext ctx) throws Exception {
         if (finished) {
             ctx.fireChannelInactive();
         } else {
@@ -228,7 +228,7 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
     }
 
     @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+    public final void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         if (finished) {
             ctx.fireExceptionCaught(cause);
         } else {
@@ -306,7 +306,7 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
     protected abstract ProxyConnectionEvent newUserEvent();
 
     @Override
-    public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+    public final void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
         if (suppressChannelReadComplete) {
             suppressChannelReadComplete = false;
 
@@ -319,7 +319,7 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
     }
 
     @Override
-    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+    public final void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         if (finished) {
             writePendingWrites();
             ctx.write(msg, promise);
@@ -329,7 +329,7 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
     }
 
     @Override
-    public void flush(ChannelHandlerContext ctx) throws Exception {
+    public final void flush(ChannelHandlerContext ctx) throws Exception {
         if (finished) {
             writePendingWrites();
             ctx.flush();
