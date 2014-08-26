@@ -38,12 +38,15 @@ import io.netty.util.internal.StringUtil;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import java.util.Collections;
+import java.util.Arrays;
 
 public final class Socks5ProxyHandler extends ProxyHandler {
 
     private static final String PROTOCOL = "socks5";
     private static final String AUTH_PASSWORD = "password";
+
+    private static final Socks5InitRequest INIT_REQUEST =
+            new Socks5InitRequest(Arrays.asList(Socks5AuthScheme.NO_AUTH, Socks5AuthScheme.AUTH_PASSWORD));
 
     private final String username;
     private final String password;
@@ -97,7 +100,7 @@ public final class Socks5ProxyHandler extends ProxyHandler {
 
     @Override
     protected Object newInitialMessage(ChannelHandlerContext ctx) throws Exception {
-        return new Socks5InitRequest(Collections.singletonList(socksAuthScheme()));
+        return INIT_REQUEST;
     }
 
     @Override
