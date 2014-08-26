@@ -45,9 +45,6 @@ public final class Socks5ProxyHandler extends ProxyHandler {
     private static final String AUTH_PASSWORD = "password";
     private static final String AUTH_NONE = "none";
 
-    private static final ProxyConnectionEvent EVT_PASSWORD = new ProxyConnectionEvent(PROTOCOL, AUTH_PASSWORD);
-    private static final ProxyConnectionEvent EVT_NONE = new ProxyConnectionEvent(PROTOCOL, AUTH_NONE);
-
     private final String username;
     private final String password;
 
@@ -177,10 +174,5 @@ public final class Socks5ProxyHandler extends ProxyHandler {
 
         ctx.pipeline().addBefore("socks5encoder", "socks5decoder", new Socks5CmdResponseDecoder());
         ctx.writeAndFlush(new Socks5CmdRequest(Socks5CmdType.CONNECT, addrType, rhost, raddr.getPort()));
-    }
-
-    @Override
-    protected ProxyConnectionEvent newUserEvent() {
-        return socksAuthScheme() == Socks5AuthScheme.AUTH_PASSWORD? EVT_PASSWORD : EVT_NONE;
     }
 }

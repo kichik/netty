@@ -34,9 +34,6 @@ public final class Socks4ProxyHandler extends ProxyHandler {
     private static final String AUTH_USERNAME = "username";
     private static final String AUTH_NONE = "none";
 
-    private static final ProxyConnectionEvent EVT_USERNAME = new ProxyConnectionEvent(PROTOCOL, AUTH_USERNAME);
-    private static final ProxyConnectionEvent EVT_NONE = new ProxyConnectionEvent(PROTOCOL, AUTH_NONE);
-
     private final String username;
 
     public Socks4ProxyHandler(SocketAddress proxyAddress) {
@@ -101,10 +98,5 @@ public final class Socks4ProxyHandler extends ProxyHandler {
         }
 
         throw new ProxyConnectException("proxyAddress: " + proxyAddress() + ", status: " + status);
-    }
-
-    @Override
-    protected ProxyConnectionEvent newUserEvent() {
-        return username != null? EVT_USERNAME : EVT_NONE;
     }
 }

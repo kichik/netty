@@ -18,25 +18,38 @@ package io.netty.handler.proxy;
 
 import io.netty.util.internal.StringUtil;
 
+import java.net.SocketAddress;
+
 public final class ProxyConnectionEvent {
 
     private final String protocol;
     private final String authScheme;
+    private final SocketAddress proxyAddress;
+    private final SocketAddress destinationAddress;
     private String strVal;
 
     /**
      * Creates a new event that indicates a successful connection attempt to the destination address.
      */
-    public ProxyConnectionEvent(String protocol, String authScheme) {
+    public ProxyConnectionEvent(
+            String protocol, String authScheme, SocketAddress proxyAddress, SocketAddress destinationAddress) {
         if (protocol == null) {
             throw new NullPointerException("protocol");
         }
         if (authScheme == null) {
             throw new NullPointerException("authScheme");
         }
+        if (proxyAddress != null) {
+            throw new NullPointerException("proxyAddress");
+        }
+        if (destinationAddress != null) {
+            throw new NullPointerException("destinationAddress");
+        }
 
         this.protocol = protocol;
         this.authScheme = authScheme;
+        this.proxyAddress = proxyAddress;
+        this.destinationAddress = destinationAddress;
     }
 
     /**
@@ -53,6 +66,22 @@ public final class ProxyConnectionEvent {
         return authScheme;
     }
 
+    /**
+     * Returns the address of the proxy server.
+     */
+    @SuppressWarnings("unchecked")
+    public <T extends SocketAddress> T proxyAddress() {
+        return (T) proxyAddress;
+    }
+
+    /**
+     * Returns the address of the destination.
+     */
+    @SuppressWarnings("unchecked")
+    public <T extends SocketAddress> T destinationAddress() {
+        return (T) destinationAddress;
+    }
+
     public String toString() {
         if (strVal != null) {
             return strVal;
@@ -60,10 +89,14 @@ public final class ProxyConnectionEvent {
 
         StringBuilder buf = new StringBuilder(128);
         buf.append(StringUtil.simpleClassName(this));
-        buf.append("(protocol: ");
+        buf.append('(');
         buf.append(protocol);
-        buf.append(", authScheme: ");
+        buf.append(", ");
         buf.append(authScheme);
+        buf.append(", ");
+        buf.append(proxyAddress);
+        buf.append(" => ");
+        buf.append(destinationAddress);
         buf.append(')');
 
         return strVal = buf.toString();

@@ -303,7 +303,9 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
     /**
      * Returns a user event that notifies that the connection to the destination has been established successfully.
      */
-    protected abstract ProxyConnectionEvent newUserEvent();
+    private ProxyConnectionEvent newUserEvent() {
+        return new ProxyConnectionEvent(protocol(), authScheme(), proxyAddress, destinationAddress);
+    }
 
     @Override
     public final void channelReadComplete(ChannelHandlerContext ctx) throws Exception {

@@ -42,9 +42,6 @@ public final class HttpProxyHandler extends ProxyHandler {
     private static final String AUTH_BASIC = "basic";
     private static final String AUTH_NONE = "none";
 
-    private static final ProxyConnectionEvent EVT_NONE = new ProxyConnectionEvent(PROTOCOL, AUTH_NONE);
-    private static final ProxyConnectionEvent EVT_BASIC = new ProxyConnectionEvent(PROTOCOL, AUTH_BASIC);
-
     private final String username;
     private final String password;
     private final CharSequence authorization;
@@ -139,10 +136,5 @@ public final class HttpProxyHandler extends ProxyHandler {
         }
 
         return response instanceof LastHttpContent;
-    }
-
-    @Override
-    protected ProxyConnectionEvent newUserEvent() {
-        return authorization != null? EVT_BASIC : EVT_NONE;
     }
 }
