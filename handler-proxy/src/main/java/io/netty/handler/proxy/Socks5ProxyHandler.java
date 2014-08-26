@@ -85,8 +85,9 @@ public final class Socks5ProxyHandler extends ProxyHandler {
     @Override
     protected void configurePipeline(ChannelHandlerContext ctx) throws Exception {
         ChannelPipeline p = ctx.pipeline();
-        p.addBefore(ctx.name(), "socks5decoder", new Socks5InitResponseDecoder());
-        p.addBefore(ctx.name(), "socks5encoder", Socks5MessageEncoder.INSTANCE);
+        String name = ctx.name();
+        p.addBefore(name, "socks5decoder", new Socks5InitResponseDecoder());
+        p.addBefore(name, "socks5encoder", Socks5MessageEncoder.INSTANCE);
     }
 
     @Override

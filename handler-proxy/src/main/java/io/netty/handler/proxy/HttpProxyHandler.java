@@ -93,8 +93,9 @@ public final class HttpProxyHandler extends ProxyHandler {
     @Override
     protected void configurePipeline(ChannelHandlerContext ctx) throws Exception {
         ChannelPipeline p = ctx.pipeline();
-        p.addBefore(ctx.name(), "httpdecoder", new HttpResponseDecoder());
-        p.addBefore(ctx.name(), "httpencoder", new HttpRequestEncoder());
+        String name = ctx.name();
+        p.addBefore(name, "httpdecoder", new HttpResponseDecoder());
+        p.addBefore(name, "httpencoder", new HttpRequestEncoder());
     }
 
     @Override
