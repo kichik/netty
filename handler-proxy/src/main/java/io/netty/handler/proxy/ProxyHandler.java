@@ -36,7 +36,15 @@ import java.util.concurrent.TimeUnit;
 
 public abstract class ProxyHandler extends ChannelDuplexHandler {
 
+    /**
+     * The default connect timeout: 10 seconds.
+     */
     private static final long DEFAULT_CONNECT_TIMEOUT_MILLIS = 10000;
+
+    /**
+     * A string that signifies 'no authentication' or 'anonymous'.
+     */
+    static final String AUTH_NONE = "none";
 
     private final SocketAddress proxyAddress;
     private volatile SocketAddress destinationAddress;

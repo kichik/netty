@@ -44,7 +44,6 @@ public final class Socks5ProxyHandler extends ProxyHandler {
 
     private static final String PROTOCOL = "socks5";
     private static final String AUTH_PASSWORD = "password";
-    private static final String AUTH_NONE = "none";
 
     private final String username;
     private final String password;

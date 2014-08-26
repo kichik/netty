@@ -32,7 +32,6 @@ public final class Socks4ProxyHandler extends ProxyHandler {
 
     private static final String PROTOCOL = "socks4";
     private static final String AUTH_USERNAME = "username";
-    private static final String AUTH_NONE = "none";
 
     private final String username;
 

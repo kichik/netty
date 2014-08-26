@@ -40,7 +40,6 @@ public final class HttpProxyHandler extends ProxyHandler {
 
     private static final String PROTOCOL = "http";
     private static final String AUTH_BASIC = "basic";
-    private static final String AUTH_NONE = "none";
 
     private final String username;
     private final String password;
