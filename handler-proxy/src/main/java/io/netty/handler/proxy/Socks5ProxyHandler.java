@@ -39,13 +39,17 @@ import io.netty.util.internal.StringUtil;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.Arrays;
+import java.util.Collections;
 
 public final class Socks5ProxyHandler extends ProxyHandler {
 
     private static final String PROTOCOL = "socks5";
     private static final String AUTH_PASSWORD = "password";
 
-    private static final Socks5InitRequest INIT_REQUEST =
+    private static final Socks5InitRequest INIT_REQUEST_NO_AUTH =
+            new Socks5InitRequest(Collections.singletonList(Socks5AuthScheme.NO_AUTH));
+
+    private static final Socks5InitRequest INIT_REQUEST_PASSWORD =
             new Socks5InitRequest(Arrays.asList(Socks5AuthScheme.NO_AUTH, Socks5AuthScheme.AUTH_PASSWORD));
 
     private final String username;
@@ -100,7 +104,7 @@ public final class Socks5ProxyHandler extends ProxyHandler {
 
     @Override
     protected Object newInitialMessage(ChannelHandlerContext ctx) throws Exception {
-        return INIT_REQUEST;
+        return socksAuthScheme() == Socks5AuthScheme.AUTH_PASSWORD? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
 
     @Override
@@ -109,20 +113,27 @@ public final class Socks5ProxyHandler extends ProxyHandler {
             Socks5InitResponse res = (Socks5InitResponse) response;
             Socks5AuthScheme authScheme = socksAuthScheme();
 
-            if (authScheme != res.authScheme()) {
-                // Server did not accept the requested authentication scheme.
-                throw new ProxyConnectException(exceptionMessage("mismatching authScheme: " + res.authScheme()));
+            if (res.authScheme() != Socks5AuthScheme.NO_AUTH && authScheme != res.authScheme()) {
+                // Server did not allow unauthenticated access nor accept the requested authentication scheme.
+                throw new ProxyConnectException(exceptionMessage("unexpected authScheme: " + res.authScheme()));
             }
 
-            if (authScheme == Socks5AuthScheme.AUTH_PASSWORD) {
+            switch (authScheme) {
+            case NO_AUTH:
+                sendConnectCommand(ctx);
+                break;
+            case AUTH_PASSWORD:
                 // In case of password authentication, send an authentication request.
                 ctx.pipeline().addBefore("socks5encoder", "socks5decoder", new Socks5AuthResponseDecoder());
                 sendToProxyServer(
                         new Socks5AuthRequest(username != null? username : "", password != null? password : ""));
-            } else { // authScheme == NO_AUTH
-                sendConnectCommand(ctx);
-                return false;
+                break;
+            default:
+                // Should never reach here.
+                throw new Error();
             }
+
+            return false;
         }
 
         if (response instanceof Socks5AuthResponse) {
@@ -175,6 +186,6 @@ public final class Socks5ProxyHandler extends ProxyHandler {
         }
 
         ctx.pipeline().addBefore("socks5encoder", "socks5decoder", new Socks5CmdResponseDecoder());
-        ctx.writeAndFlush(new Socks5CmdRequest(Socks5CmdType.CONNECT, addrType, rhost, raddr.getPort()));
+        sendToProxyServer(new Socks5CmdRequest(Socks5CmdType.CONNECT, addrType, rhost, raddr.getPort()));
     }
 }
