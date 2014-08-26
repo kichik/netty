@@ -266,6 +266,32 @@ public final class EpollDatagramChannel extends AbstractEpollChannel implements 
             }
 
             try {
+                // Check if SENDMMSG is supported which is only the case for GLIBC 2.14+
+                if (Native.IS_SUPPORTING_SENDMMSG && in.size() >= 1) {
+                    NativeDatagramPacketArray array = NativeDatagramPacketArray.getInstance(in);
+                    int cnt = array.count();
+
+                    if (cnt >= 1) {
+                        // Try to use gathering writes via sendmmsg(...) syscall.
+                        int offset = 0;
+                        NativeDatagramPacketArray.NativeDatagramPacket[] packets = array.packets();
+
+                        while (cnt > 0) {
+                            int send = Native.sendmmsg(fd, packets, offset, cnt);
+                            if (send == 0) {
+                                // Did not write all messages.
+                                setEpollOut();
+                                return;
+                            }
+                            for (int i = 0; i < send; i++) {
+                                in.remove();
+                            }
+                            cnt -= send;
+                            offset += send;
+                        }
+                    }
+                    continue;
+                }
                 boolean done = false;
                 for (int i = config().getWriteSpinCount() - 1; i >= 0; i--) {
                     if (doWriteMessage(msg)) {
