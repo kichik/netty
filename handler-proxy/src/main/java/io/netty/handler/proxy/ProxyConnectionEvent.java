@@ -39,10 +39,10 @@ public final class ProxyConnectionEvent {
         if (authScheme == null) {
             throw new NullPointerException("authScheme");
         }
-        if (proxyAddress != null) {
+        if (proxyAddress == null) {
             throw new NullPointerException("proxyAddress");
         }
-        if (destinationAddress != null) {
+        if (destinationAddress == null) {
             throw new NullPointerException("destinationAddress");
         }
 
