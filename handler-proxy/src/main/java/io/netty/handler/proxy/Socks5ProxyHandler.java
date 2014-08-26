@@ -41,6 +41,13 @@ import java.util.Collections;
 
 public final class Socks5ProxyHandler extends ProxyHandler {
 
+    private static final String PROTOCOL = "socks5";
+    private static final String AUTH_PASSWORD = "password";
+    private static final String AUTH_NONE = "none";
+
+    private static final ProxyConnectionEvent EVT_PASSWORD = new ProxyConnectionEvent(PROTOCOL, AUTH_PASSWORD);
+    private static final ProxyConnectionEvent EVT_NONE = new ProxyConnectionEvent(PROTOCOL, AUTH_NONE);
+
     private final String username;
     private final String password;
 
@@ -62,12 +69,12 @@ public final class Socks5ProxyHandler extends ProxyHandler {
 
     @Override
     public String protocol() {
-        return "socks5";
+        return PROTOCOL;
     }
 
     @Override
     public String authScheme() {
-        return socksAuthScheme() == Socks5AuthScheme.AUTH_PASSWORD? "password" : "none";
+        return socksAuthScheme() == Socks5AuthScheme.AUTH_PASSWORD? AUTH_PASSWORD : AUTH_NONE;
     }
 
     public String username() {
@@ -111,7 +118,7 @@ public final class Socks5ProxyHandler extends ProxyHandler {
             if (authScheme == Socks5AuthScheme.AUTH_PASSWORD) {
                 // In case of password authentication, send an authentication request.
                 ctx.pipeline().addBefore("socks5encoder", "socks5decoder", new Socks5AuthResponseDecoder());
-                ctx.writeAndFlush(
+                sendToProxyServer(
                         new Socks5AuthRequest(username != null? username : "", password != null? password : ""));
             } else { // authScheme == NO_AUTH
                 sendConnectCommand(ctx);
@@ -170,5 +177,10 @@ public final class Socks5ProxyHandler extends ProxyHandler {
 
         ctx.pipeline().addBefore("socks5encoder", "socks5decoder", new Socks5CmdResponseDecoder());
         ctx.writeAndFlush(new Socks5CmdRequest(Socks5CmdType.CONNECT, addrType, rhost, raddr.getPort()));
+    }
+
+    @Override
+    protected ProxyConnectionEvent newUserEvent() {
+        return socksAuthScheme() == Socks5AuthScheme.AUTH_PASSWORD? EVT_PASSWORD : EVT_NONE;
     }
 }

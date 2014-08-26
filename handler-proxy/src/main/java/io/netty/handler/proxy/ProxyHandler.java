@@ -16,47 +16,47 @@
 
 package io.netty.handler.proxy;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.PendingWriteQueue;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.DefaultPromise;
+import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.ScheduledFuture;
+import io.netty.util.internal.OneTimeTask;
 
 import java.net.SocketAddress;
 import java.nio.channels.ConnectionPendingException;
+import java.util.concurrent.TimeUnit;
 
 public abstract class ProxyHandler extends ChannelDuplexHandler {
 
-    /**
-     * Not connected to the destination. This handler is supposed to:
-     * <ul>
-     * <li>intercept the {@code connect()} operation</li>
-     * <li>send the initial message to the proxy server when connected to the proxy server</li>
-     * <li>handle the negotiation or authentication with the proxy server</li>
-     * <li>connect to the destination</li>
-     * <li>hide the {@code channelReadComplete()} events triggered during the communication with the proxy server</li>
-     * </ul>
-     */
-    private static final int ST_NOT_CONNECTED = 0;
-
-    /**
-     * Connected to the destination successfully.  This handler is supposed to:
-     * <ul>
-     * <li>hide the last {@code channelReadComplete()} event triggered during the communication with the proxy
-     *     server, and move on to the {@link #ST_FINISHED} state</li>
-     * </ul>
-     */
-    private static final int ST_CONNECTED = 1;
-
-    /** There's nothing left to do in this handler. */
-    private static final int ST_FINISHED = 2;
+    private static final long DEFAULT_CONNECT_TIMEOUT_MILLIS = 10000;
 
     private final SocketAddress proxyAddress;
     private volatile SocketAddress destinationAddress;
+    private volatile long connectTimeoutMillis = DEFAULT_CONNECT_TIMEOUT_MILLIS;
 
+    private volatile ChannelHandlerContext ctx;
     private PendingWriteQueue pendingWrites;
-    @SuppressWarnings("RedundantFieldInitialization")
-    private int state = ST_NOT_CONNECTED;
+    private boolean finished;
+    private boolean suppressChannelReadComplete;
     private boolean flushedPrematurely;
+    private final LazyChannelPromise connectPromise = new LazyChannelPromise();
+    private ScheduledFuture<?> connectTimeoutFuture;
+    private final ChannelFutureListener writeListener = new ChannelFutureListener() {
+        @Override
+        public void operationComplete(ChannelFuture future) throws Exception {
+            if (!future.isSuccess()) {
+                setConnectFailure(future.cause());
+            }
+        }
+    };
 
     protected ProxyHandler(SocketAddress proxyAddress) {
         if (proxyAddress == null) {
@@ -75,22 +75,62 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
      */
     public abstract String authScheme();
 
+    /**
+     * Returns the address of the proxy server.
+     */
     @SuppressWarnings("unchecked")
     public final <T extends SocketAddress> T proxyAddress() {
         return (T) proxyAddress;
     }
 
+    /**
+     * Returns the address of the destination to connect to via the proxy server.
+     */
     @SuppressWarnings("unchecked")
     public final <T extends SocketAddress> T destinationAddress() {
         return (T) destinationAddress;
     }
 
+    /**
+     * Rerutns {@code true} if and only if the connection to the destination has been established successfully.
+     */
     public final boolean isConnected() {
-        return state != ST_NOT_CONNECTED;
+        return connectPromise.isSuccess();
+    }
+
+    /**
+     * Returns a {@link Future} that is notified when the connection to the destination has been established
+     * or the connection attempt has failed.
+     */
+    public final Future<Channel> connectFuture() {
+        return connectPromise;
+    }
+
+    /**
+     * Returns the connect timeout in millis.  If the connection attempt to the destination does not finish within
+     * the timeout, the connection attempt will be failed.
+     */
+    public final long connectTimeoutMillis() {
+        return connectTimeoutMillis;
+    }
+
+    /**
+     * Sets the connect timeout in millis.  If the connection attempt to the destination does not finish within
+     * the timeout, the connection attempt will be failed.
+     */
+    public final void setConnectTimeoutMillis(long connectTimeoutMillis) {
+        if (connectTimeoutMillis <= 0) {
+            connectTimeoutMillis = 0;
+        }
+
+        this.connectTimeoutMillis = connectTimeoutMillis;
     }
 
     @Override
     public final void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+        this.ctx = ctx;
+        configurePipeline(ctx);
+
         if (ctx.channel().isActive()) {
             // channelActive() event has been fired already, which means this.channelActive() will
             // not be invoked. We have to initialize here instead.
@@ -99,10 +139,11 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
             // channelActive() event has not been fired yet.  this.channelOpen() will be invoked
             // and initialization will occur there.
         }
-
-        configurePipeline(ctx);
     }
 
+    /**
+     * Configures the pipeline to insert the handlers required to communicate with the proxy server.
+     */
     protected abstract void configurePipeline(ChannelHandlerContext ctx) throws Exception;
 
     @Override
@@ -110,6 +151,9 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
         deconfigurePipeline(ctx);
     }
 
+    /**
+     * Reverts the pipeline changes made in {@link #configurePipeline(ChannelHandlerContext)}.
+     */
     protected abstract void deconfigurePipeline(ChannelHandlerContext ctx) throws Exception;
 
     @Override
@@ -132,104 +176,178 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
         ctx.fireChannelActive();
     }
 
-    private void sendInitialMessage(ChannelHandlerContext ctx) throws Exception {
-        // TODO: Handle response timeout properly.
-        Object initialMessage = newInitialMessage(ctx);
+    /**
+     * Sends the initial message to be sent to the proxy server. This method also starts a timeout task which marks
+     * the {@link #connectPromise} as failure if the connection attempt does not success within the timeout.
+     */
+    private void sendInitialMessage(final ChannelHandlerContext ctx) throws Exception {
+        final long connectTimeoutMillis = this.connectTimeoutMillis;
+        if (connectTimeoutMillis > 0) {
+            connectTimeoutFuture = ctx.executor().schedule(new OneTimeTask() {
+                @Override
+                public void run() {
+                    if (!connectPromise.isDone()) {
+                        setConnectFailure(
+                                new ProxyConnectException("proxyAddress: " + proxyAddress + ", timeout"));
+                    }
+                }
+            }, connectTimeoutMillis, TimeUnit.MILLISECONDS);
+        }
+
+        final Object initialMessage = newInitialMessage(ctx);
         if (initialMessage != null) {
-            ctx.writeAndFlush(initialMessage);
+            sendToProxyServer(initialMessage);
         }
     }
 
+    /**
+     * Returns a new message that is sent at first time when the connection to the proxy server has been established.
+     *
+     * @return the initial message, or {@code null} if the proxy server is expected to send the first message instead
+     */
     protected abstract Object newInitialMessage(ChannelHandlerContext ctx) throws Exception;
+
+    /**
+     * Sends the specified message to the proxy server.  Use this method to send a response to the proxy server in
+     * {@link #handleResponse(ChannelHandlerContext, Object)}.
+     */
+    protected void sendToProxyServer(Object msg) {
+        ctx.writeAndFlush(msg).addListener(writeListener);
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        if (finished) {
+            ctx.fireChannelInactive();
+        } else {
+            // Disconnected before connected to the destination.
+            setConnectFailure(
+                    new ProxyConnectException("disconnected from proxy server before connected to the destination"));
+        }
+
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        if (finished) {
+            ctx.fireExceptionCaught(cause);
+        } else {
+            // Exception was raised before the connection attempt is finished.
+            setConnectFailure(cause);
+        }
+    }
 
     @Override
     public final void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-        switch (state) {
-        case ST_NOT_CONNECTED:
-            boolean success = false;
+        if (finished) {
+            // Received a message after the connection has been established; pass through.
+            suppressChannelReadComplete = false;
+            ctx.fireChannelRead(msg);
+        } else {
+            suppressChannelReadComplete = true;
+            Throwable cause = null;
             try {
                 boolean done = handleResponse(ctx, msg);
                 if (done) {
-                    setConnected(ctx);
+                    setConnectSuccess();
                 }
-                success = true;
+            } catch (Throwable t) {
+                cause = t;
             } finally {
-                if (!success) {
-                    ctx.close();
+                ReferenceCountUtil.release(msg);
+                if (cause != null) {
+                    setConnectFailure(cause);
                 }
             }
-            break;
-        case ST_CONNECTED:
-            // Received a message after the connection has been established *and* before channelReadComplete().
-            // We should not let our channelReadComplete() handler method swallow a channelReadComplete() event,
-            // because otherwise a user will not see the channelReadComplete() event for his or her message.
-            state = ST_FINISHED;
-        case ST_FINISHED:
-            // Received a message after the connection has been established; pass through.
-            ctx.fireChannelRead(msg);
-            break;
         }
     }
 
-    private void setConnected(ChannelHandlerContext ctx) {
-        state = ST_CONNECTED;
-        clearPendingWrites();
-
-        if (flushedPrematurely) {
-            ctx.flush();
-        }
-    }
-
+    /**
+     * Handles the message received from the proxy server.
+     *
+     * @return {@code true} if the connection to the destination has been established,
+     *         {@code false} if the connection to the destination has not been established and more messages are
+     *         expected from the proxy server
+     */
     protected abstract boolean handleResponse(ChannelHandlerContext ctx, Object response) throws Exception;
+
+    private void setConnectSuccess() {
+        finished = true;
+        if (connectTimeoutFuture != null) {
+            connectTimeoutFuture.cancel(false);
+        }
+
+        if (connectPromise.trySuccess(ctx.channel())) {
+            ctx.fireUserEventTriggered(newUserEvent());
+            writePendingWrites();
+
+            if (flushedPrematurely) {
+                ctx.flush();
+            }
+        }
+    }
+
+    private void setConnectFailure(Throwable cause) {
+        finished = true;
+        if (connectTimeoutFuture != null) {
+            connectTimeoutFuture.cancel(false);
+        }
+
+        if (connectPromise.tryFailure(cause)) {
+            failPendingWrites(cause);
+            ctx.fireExceptionCaught(cause);
+            ctx.close();
+        }
+    }
+
+    /**
+     * Returns a user event that notifies that the connection to the destination has been established successfully.
+     */
+    protected abstract ProxyConnectionEvent newUserEvent();
 
     @Override
     public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-        switch (state) {
-        case ST_NOT_CONNECTED:
-            readIfNecessary(ctx);
-            break;
-        case ST_CONNECTED:
-            // The last channelReadComplete() event triggered during the communication with the proxy server.
-            state = ST_FINISHED;
-            readIfNecessary(ctx);
-            break;
-        case ST_FINISHED:
-            ctx.fireChannelReadComplete();
-            break;
-        }
-    }
+        if (suppressChannelReadComplete) {
+            suppressChannelReadComplete = false;
 
-    private static void readIfNecessary(ChannelHandlerContext ctx) {
-        if (!ctx.channel().config().isAutoRead()) {
-            ctx.read();
+            if (!ctx.channel().config().isAutoRead()) {
+                ctx.read();
+            }
+        } else {
+            ctx.fireChannelReadComplete();
         }
     }
 
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-        if (state == ST_NOT_CONNECTED) {
+        if (finished) {
+            writePendingWrites();
+            ctx.write(msg, promise);
+        } else {
             addPendingWrite(ctx, msg, promise);
-            return;
         }
-
-        clearPendingWrites();
-        ctx.write(msg, promise);
     }
 
     @Override
     public void flush(ChannelHandlerContext ctx) throws Exception {
-        if (state == ST_NOT_CONNECTED) {
+        if (finished) {
+            writePendingWrites();
+            ctx.flush();
+        } else {
             flushedPrematurely = true;
-            return;
         }
-
-        clearPendingWrites();
-        ctx.flush();
     }
 
-    private void clearPendingWrites() {
+    private void writePendingWrites() {
         if (pendingWrites != null) {
             pendingWrites.removeAndWriteAll();
+            pendingWrites = null;
+        }
+    }
+
+    private void failPendingWrites(Throwable cause) {
+        if (pendingWrites != null) {
+            pendingWrites.removeAndFailAll(cause);
             pendingWrites = null;
         }
     }
@@ -240,5 +358,15 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
             this.pendingWrites = pendingWrites = new PendingWriteQueue(ctx);
         }
         pendingWrites.add(msg, promise);
+    }
+
+    private final class LazyChannelPromise extends DefaultPromise<Channel> {
+        @Override
+        protected EventExecutor executor() {
+            if (ctx == null) {
+                throw new IllegalStateException();
+            }
+            return ctx.executor();
+        }
     }
 }

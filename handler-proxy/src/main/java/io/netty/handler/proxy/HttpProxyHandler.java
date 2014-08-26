@@ -16,6 +16,7 @@
 
 package io.netty.handler.proxy;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
@@ -35,20 +36,27 @@ import io.netty.util.CharsetUtil;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 
-public final class Http1ProxyHandler extends ProxyHandler {
+public final class HttpProxyHandler extends ProxyHandler {
+
+    private static final String PROTOCOL = "http";
+    private static final String AUTH_BASIC = "basic";
+    private static final String AUTH_NONE = "none";
+
+    private static final ProxyConnectionEvent EVT_NONE = new ProxyConnectionEvent(PROTOCOL, AUTH_NONE);
+    private static final ProxyConnectionEvent EVT_BASIC = new ProxyConnectionEvent(PROTOCOL, AUTH_BASIC);
 
     private final String username;
     private final String password;
     private final CharSequence authorization;
 
-    public Http1ProxyHandler(SocketAddress proxyAddress) {
+    public HttpProxyHandler(SocketAddress proxyAddress) {
         super(proxyAddress);
         username = null;
         password = null;
         authorization = null;
     }
 
-    public Http1ProxyHandler(SocketAddress proxyAddress, String username, String password) {
+    public HttpProxyHandler(SocketAddress proxyAddress, String username, String password) {
         super(proxyAddress);
         if (username == null) {
             throw new NullPointerException("username");
@@ -58,18 +66,24 @@ public final class Http1ProxyHandler extends ProxyHandler {
         }
         this.username = username;
         this.password = password;
-        authorization = new AsciiString(
-                Base64.encode(Unpooled.copiedBuffer(username + ':' + password, CharsetUtil.UTF_8), false).nioBuffer());
+
+        ByteBuf authz = Unpooled.copiedBuffer(username + ':' + password, CharsetUtil.UTF_8);
+        ByteBuf authzBase64 = Base64.encode(authz, false);
+
+        authorization = new AsciiString(authzBase64.toString(CharsetUtil.US_ASCII));
+
+        authz.release();
+        authzBase64.release();
     }
 
     @Override
     public String protocol() {
-        return "http/1";
+        return PROTOCOL;
     }
 
     @Override
     public String authScheme() {
-        return authorization != null? "basic" : "none";
+        return authorization != null? AUTH_BASIC : AUTH_NONE;
     }
 
     public String username() {
@@ -83,15 +97,15 @@ public final class Http1ProxyHandler extends ProxyHandler {
     @Override
     protected void configurePipeline(ChannelHandlerContext ctx) throws Exception {
         ChannelPipeline p = ctx.pipeline();
-        p.addBefore(ctx.name(), "http1decoder", new HttpResponseDecoder());
-        p.addBefore(ctx.name(), "http1encoder", new HttpRequestEncoder());
+        p.addBefore(ctx.name(), "httpdecoder", new HttpResponseDecoder());
+        p.addBefore(ctx.name(), "httpencoder", new HttpRequestEncoder());
     }
 
     @Override
     protected void deconfigurePipeline(ChannelHandlerContext ctx) throws Exception {
         ChannelPipeline p = ctx.pipeline();
-        p.remove("http1decoder");
-        p.remove("http1encoder");
+        p.remove("httpdecoder");
+        p.remove("httpencoder");
     }
 
     @Override
@@ -125,5 +139,10 @@ public final class Http1ProxyHandler extends ProxyHandler {
         }
 
         return response instanceof LastHttpContent;
+    }
+
+    @Override
+    protected ProxyConnectionEvent newUserEvent() {
+        return authorization != null? EVT_BASIC : EVT_NONE;
     }
 }

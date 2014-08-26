@@ -30,6 +30,13 @@ import java.net.SocketAddress;
 
 public final class Socks4ProxyHandler extends ProxyHandler {
 
+    private static final String PROTOCOL = "socks4";
+    private static final String AUTH_USERNAME = "username";
+    private static final String AUTH_NONE = "none";
+
+    private static final ProxyConnectionEvent EVT_USERNAME = new ProxyConnectionEvent(PROTOCOL, AUTH_USERNAME);
+    private static final ProxyConnectionEvent EVT_NONE = new ProxyConnectionEvent(PROTOCOL, AUTH_NONE);
+
     private final String username;
 
     public Socks4ProxyHandler(SocketAddress proxyAddress) {
@@ -46,12 +53,12 @@ public final class Socks4ProxyHandler extends ProxyHandler {
 
     @Override
     public String protocol() {
-        return "socks4";
+        return PROTOCOL;
     }
 
     @Override
     public String authScheme() {
-        return username != null? "username" : "none";
+        return username != null? AUTH_USERNAME : AUTH_NONE;
     }
 
     public String username() {
@@ -94,5 +101,10 @@ public final class Socks4ProxyHandler extends ProxyHandler {
         }
 
         throw new ProxyConnectException("proxyAddress: " + proxyAddress() + ", status: " + status);
+    }
+
+    @Override
+    protected ProxyConnectionEvent newUserEvent() {
+        return username != null? EVT_USERNAME : EVT_NONE;
     }
 }
