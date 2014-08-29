@@ -1,0 +1,157 @@
+/*
+ * Copyright 2014 The Netty Project
+ *
+ * The Netty Project licenses this file to you under the Apache License,
+ * version 2.0 (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at:
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ */
+
+package io.netty.handler.proxy;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.handler.codec.LineBasedFrameDecoder;
+import io.netty.handler.codec.socksx.v5.Socks5AddressType;
+import io.netty.handler.codec.socksx.v5.Socks5AuthRequest;
+import io.netty.handler.codec.socksx.v5.Socks5AuthRequestDecoder;
+import io.netty.handler.codec.socksx.v5.Socks5AuthResponse;
+import io.netty.handler.codec.socksx.v5.Socks5AuthScheme;
+import io.netty.handler.codec.socksx.v5.Socks5AuthStatus;
+import io.netty.handler.codec.socksx.v5.Socks5CmdRequest;
+import io.netty.handler.codec.socksx.v5.Socks5CmdRequestDecoder;
+import io.netty.handler.codec.socksx.v5.Socks5CmdResponse;
+import io.netty.handler.codec.socksx.v5.Socks5CmdStatus;
+import io.netty.handler.codec.socksx.v5.Socks5CmdType;
+import io.netty.handler.codec.socksx.v5.Socks5InitRequest;
+import io.netty.handler.codec.socksx.v5.Socks5InitRequestDecoder;
+import io.netty.handler.codec.socksx.v5.Socks5InitResponse;
+import io.netty.handler.codec.socksx.v5.Socks5MessageEncoder;
+import io.netty.util.CharsetUtil;
+
+import java.net.InetSocketAddress;
+
+import static org.hamcrest.CoreMatchers.*;
+import static org.junit.Assert.*;
+
+public class Socks5ProxyServer extends ProxyServer {
+
+    public Socks5ProxyServer(boolean useSsl, TestMode testMode, InetSocketAddress destination) {
+        super(useSsl, testMode, destination);
+    }
+
+    public Socks5ProxyServer(
+            boolean useSsl, TestMode testMode, InetSocketAddress destination, String username, String password) {
+        super(useSsl, testMode, destination, username, password);
+    }
+
+    @Override
+    protected void configure(SocketChannel ch) throws Exception {
+        ChannelPipeline p = ch.pipeline();
+        switch (testMode) {
+        case TERMINAL:
+            p.addLast("decoder", new Socks5InitRequestDecoder());
+            p.addLast("encoder", Socks5MessageEncoder.INSTANCE);
+            p.addLast(new TerminalHandler());
+            break;
+        case UNRESPONSIVE:
+            p.addLast(UnresponsiveHandler.INSTANCE);
+            break;
+        }
+    }
+
+    private final class TerminalHandler extends SimpleChannelInboundHandler<Object> {
+
+        private boolean authenticated;
+        private boolean finished;
+
+        @Override
+        protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
+            if (finished) {
+                String str = ((ByteBuf) msg).toString(CharsetUtil.US_ASCII);
+                if ("A\n".equals(str)) {
+                    ctx.write(Unpooled.copiedBuffer("1\n", CharsetUtil.US_ASCII));
+                } else if ("B\n".equals(str)) {
+                    ctx.write(Unpooled.copiedBuffer("2\n", CharsetUtil.US_ASCII));
+                } else if ("C\n".equals(str)) {
+                    ctx.write(Unpooled.copiedBuffer("3\n", CharsetUtil.US_ASCII))
+                       .addListener(ChannelFutureListener.CLOSE);
+                } else {
+                    throw new IllegalStateException("unexpected message: " + str);
+                }
+                return;
+            }
+
+            if (!authenticated) {
+                if (username == null) {
+                    ctx.pipeline().addBefore("encoder", "decoder", new Socks5CmdRequestDecoder());
+                    ctx.write(new Socks5InitResponse(Socks5AuthScheme.NO_AUTH));
+                    authenticated = true;
+                } else {
+                    if (msg instanceof Socks5InitRequest) {
+                        ctx.pipeline().addBefore("encoder", "decoder", new Socks5AuthRequestDecoder());
+                        ctx.write(new Socks5InitResponse(Socks5AuthScheme.AUTH_PASSWORD));
+                    } else {
+                        Socks5AuthRequest req = (Socks5AuthRequest) msg;
+                        if (req.username().equals(username) && req.password().equals(password)) {
+                            ctx.pipeline().addBefore("encoder", "decoder", new Socks5CmdRequestDecoder());
+                            ctx.write(new Socks5AuthResponse(Socks5AuthStatus.SUCCESS));
+                            authenticated = true;
+                        } else {
+                            ctx.pipeline().addBefore("encoder", "decoder", new Socks5AuthRequestDecoder());
+                            ctx.write(new Socks5AuthResponse(Socks5AuthStatus.FAILURE));
+                        }
+                    }
+                }
+                return;
+            }
+
+            finished = true;
+
+            Socks5CmdRequest req = (Socks5CmdRequest) msg;
+            assertThat(req.cmdType(), is(Socks5CmdType.CONNECT));
+
+            ctx.pipeline().addBefore(ctx.name(), "lineDecoder", new LineBasedFrameDecoder(64, false, true));
+
+            Socks5CmdResponse res;
+            boolean sendGreeting = false;
+            if (!req.host().equals(destination.getHostString()) ||
+                       req.port() != destination.getPort()) {
+                res = new Socks5CmdResponse(Socks5CmdStatus.FORBIDDEN, Socks5AddressType.IPv4);
+            } else {
+                res = new Socks5CmdResponse(Socks5CmdStatus.SUCCESS, Socks5AddressType.IPv4);
+                sendGreeting = true;
+            }
+
+            ctx.write(res);
+            ctx.pipeline().remove(Socks5MessageEncoder.class);
+
+            if (sendGreeting) {
+                ctx.write(Unpooled.copiedBuffer("0\n", CharsetUtil.US_ASCII));
+            }
+        }
+
+        @Override
+        public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+            ctx.flush();
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+            recordException(cause);
+            ctx.close();
+        }
+    }
+}

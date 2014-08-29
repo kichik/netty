@@ -90,7 +90,7 @@ public final class Socks5ProxyHandler extends ProxyHandler {
     }
 
     @Override
-    protected void configurePipeline(ChannelHandlerContext ctx) throws Exception {
+    protected void addCodec(ChannelHandlerContext ctx) throws Exception {
         ChannelPipeline p = ctx.pipeline();
         String name = ctx.name();
         p.addBefore(name, "socks5decoder", new Socks5InitResponseDecoder());
@@ -98,8 +98,16 @@ public final class Socks5ProxyHandler extends ProxyHandler {
     }
 
     @Override
-    protected void deconfigurePipeline(ChannelHandlerContext ctx) throws Exception {
+    protected void removeEncoder(ChannelHandlerContext ctx) throws Exception {
         ctx.pipeline().remove("socks5encoder");
+    }
+
+    @Override
+    protected void removeDecoder(ChannelHandlerContext ctx) throws Exception {
+        ChannelPipeline p = ctx.pipeline();
+        if (p.context("socks5decoder") != null) {
+            p.remove("socks5decoder");
+        }
     }
 
     @Override

@@ -24,11 +24,13 @@ import io.netty.handler.codec.AsciiString;
 import io.netty.handler.codec.base64.Base64;
 import io.netty.handler.codec.http.DefaultFullHttpRequest;
 import io.netty.handler.codec.http.FullHttpRequest;
+import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.handler.codec.http.HttpHeaders.Names;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequestEncoder;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseDecoder;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.CharsetUtil;
@@ -44,6 +46,7 @@ public final class HttpProxyHandler extends ProxyHandler {
     private final String username;
     private final String password;
     private final CharSequence authorization;
+    private HttpResponseStatus status;
 
     public HttpProxyHandler(SocketAddress proxyAddress) {
         super(proxyAddress);
@@ -91,18 +94,22 @@ public final class HttpProxyHandler extends ProxyHandler {
     }
 
     @Override
-    protected void configurePipeline(ChannelHandlerContext ctx) throws Exception {
+    protected void addCodec(ChannelHandlerContext ctx) throws Exception {
         ChannelPipeline p = ctx.pipeline();
         String name = ctx.name();
-        p.addBefore(name, "httpdecoder", new HttpResponseDecoder());
-        p.addBefore(name, "httpencoder", new HttpRequestEncoder());
+        p.addBefore(name, "http-codec", new HttpClientCodec());
     }
 
     @Override
-    protected void deconfigurePipeline(ChannelHandlerContext ctx) throws Exception {
+    protected void removeEncoder(ChannelHandlerContext ctx) throws Exception {
         ChannelPipeline p = ctx.pipeline();
-        p.remove("httpdecoder");
-        p.remove("httpencoder");
+        p.remove(HttpRequestEncoder.class);
+    }
+
+    @Override
+    protected void removeDecoder(ChannelHandlerContext ctx) throws Exception {
+        ChannelPipeline p = ctx.pipeline();
+        p.remove(HttpResponseDecoder.class);
     }
 
     @Override
@@ -121,7 +128,8 @@ public final class HttpProxyHandler extends ProxyHandler {
 
         SocketAddress proxyAddress = proxyAddress();
         if (proxyAddress instanceof InetSocketAddress) {
-            req.headers().set(Names.HOST, ((InetSocketAddress) proxyAddress).getHostString());
+            InetSocketAddress hostAddr = (InetSocketAddress) proxyAddress;
+            req.headers().set(Names.HOST, hostAddr.getHostString() + ':' + hostAddr.getPort());
         }
 
         if (authorization != null) {
@@ -134,12 +142,22 @@ public final class HttpProxyHandler extends ProxyHandler {
     @Override
     protected boolean handleResponse(ChannelHandlerContext ctx, Object response) throws Exception {
         if (response instanceof HttpResponse) {
-            HttpResponse res = (HttpResponse) response;
-            if (res.status().code() != 200) {
-                throw new ProxyConnectException(exceptionMessage("response: " + res));
+            if (status != null) {
+                throw new ProxyConnectException(exceptionMessage("too many responses"));
+            }
+            status = ((HttpResponse) response).status();
+        }
+
+        boolean finished = response instanceof LastHttpContent;
+        if (finished) {
+            if (status == null) {
+                throw new ProxyConnectException(exceptionMessage("missing response"));
+            }
+            if (status.code() != 200) {
+                throw new ProxyConnectException(exceptionMessage("status: " + status));
             }
         }
 
-        return response instanceof LastHttpContent;
+        return finished;
     }
 }

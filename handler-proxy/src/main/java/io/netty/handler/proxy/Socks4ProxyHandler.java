@@ -62,7 +62,7 @@ public final class Socks4ProxyHandler extends ProxyHandler {
     }
 
     @Override
-    protected void configurePipeline(ChannelHandlerContext ctx) throws Exception {
+    protected void addCodec(ChannelHandlerContext ctx) throws Exception {
         ChannelPipeline p = ctx.pipeline();
         String name = ctx.name();
         p.addBefore(name, "socks4decoder", new Socks4CmdResponseDecoder());
@@ -70,10 +70,15 @@ public final class Socks4ProxyHandler extends ProxyHandler {
     }
 
     @Override
-    protected void deconfigurePipeline(ChannelHandlerContext ctx) throws Exception {
+    protected void removeEncoder(ChannelHandlerContext ctx) throws Exception {
+        ChannelPipeline p = ctx.pipeline();
+        p.remove("socks4encoder");
+    }
+
+    @Override
+    protected void removeDecoder(ChannelHandlerContext ctx) throws Exception {
         ChannelPipeline p = ctx.pipeline();
         p.remove("socks4decoder");
-        p.remove("socks4encoder");
     }
 
     @Override

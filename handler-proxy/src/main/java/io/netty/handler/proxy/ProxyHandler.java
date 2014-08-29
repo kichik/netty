@@ -29,6 +29,8 @@ import io.netty.util.concurrent.EventExecutor;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.ScheduledFuture;
 import io.netty.util.internal.OneTimeTask;
+import io.netty.util.internal.logging.InternalLogger;
+import io.netty.util.internal.logging.InternalLoggerFactory;
 
 import java.net.SocketAddress;
 import java.nio.channels.ConnectionPendingException;
@@ -45,6 +47,8 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
      * A string that signifies 'no authentication' or 'anonymous'.
      */
     static final String AUTH_NONE = "none";
+
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(ProxyHandler.class);
 
     private final SocketAddress proxyAddress;
     private volatile SocketAddress destinationAddress;
@@ -137,7 +141,7 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
     @Override
     public final void handlerAdded(ChannelHandlerContext ctx) throws Exception {
         this.ctx = ctx;
-        configurePipeline(ctx);
+        addCodec(ctx);
 
         if (ctx.channel().isActive()) {
             // channelActive() event has been fired already, which means this.channelActive() will
@@ -150,19 +154,19 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
     }
 
     /**
-     * Configures the pipeline to insert the handlers required to communicate with the proxy server.
+     * Adds the codec handlers required to communicate with the proxy server.
      */
-    protected abstract void configurePipeline(ChannelHandlerContext ctx) throws Exception;
-
-    @Override
-    public final void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
-        deconfigurePipeline(ctx);
-    }
+    protected abstract void addCodec(ChannelHandlerContext ctx) throws Exception;
 
     /**
-     * Reverts the pipeline changes made in {@link #configurePipeline(ChannelHandlerContext)}.
+     * Removes the encoders added in {@link #addCodec(ChannelHandlerContext)}.
      */
-    protected abstract void deconfigurePipeline(ChannelHandlerContext ctx) throws Exception;
+    protected abstract void removeEncoder(ChannelHandlerContext ctx) throws Exception;
+
+    /**
+     * Removes the decoders added in {@link #addCodec(ChannelHandlerContext)}.
+     */
+    protected abstract void removeDecoder(ChannelHandlerContext ctx) throws Exception;
 
     @Override
     public final void connect(
@@ -283,15 +287,52 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
         }
 
         if (connectPromise.trySuccess(ctx.channel())) {
+            boolean removedCodec = true;
+
+            removedCodec &= safeRemoveEncoder();
+
             ctx.fireUserEventTriggered(
                     new ProxyConnectionEvent(protocol(), authScheme(), proxyAddress, destinationAddress));
 
-            writePendingWrites();
+            removedCodec &= safeRemoveDecoder();
 
-            if (flushedPrematurely) {
-                ctx.flush();
+            if (removedCodec) {
+                writePendingWrites();
+
+                if (flushedPrematurely) {
+                    ctx.flush();
+                }
+            } else {
+                // We are at inconsistent state because we failed to remove all codec handlers.
+                Exception cause = new ProxyConnectException(
+                        "failed to remove all codec handlers added by the proxy handler; bug?");
+                failPendingWrites(cause);
+                ctx.fireExceptionCaught(cause);
+                ctx.close();
             }
         }
+    }
+
+    private boolean safeRemoveDecoder() {
+        try {
+            removeDecoder(ctx);
+            return true;
+        } catch (Exception e) {
+            logger.warn("Failed to remove proxy decoders:", e);
+        }
+
+        return false;
+    }
+
+    private boolean safeRemoveEncoder() {
+        try {
+            removeEncoder(ctx);
+            return true;
+        } catch (Exception e) {
+            logger.warn("Failed to remove proxy encoders:", e);
+        }
+
+        return false;
     }
 
     private void setConnectFailure(Throwable cause) {
@@ -302,10 +343,13 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
 
         if (!(cause instanceof ProxyConnectException)) {
             cause = new ProxyConnectException(
-                    exceptionMessage(null), cause);
+                    exceptionMessage(cause.toString()), cause);
         }
 
         if (connectPromise.tryFailure(cause)) {
+            safeRemoveDecoder();
+            safeRemoveEncoder();
+
             failPendingWrites(cause);
             ctx.fireExceptionCaught(cause);
             ctx.close();
@@ -317,6 +361,10 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
      * authentication scheme, proxy address, and destination address.
      */
     protected final String exceptionMessage(String msg) {
+        if (msg == null) {
+            msg = "";
+        }
+
         StringBuilder buf = new StringBuilder(128 + msg.length());
 
         buf.append(protocol());
@@ -326,7 +374,7 @@ public abstract class ProxyHandler extends ChannelDuplexHandler {
         buf.append(proxyAddress);
         buf.append(" => ");
         buf.append(destinationAddress);
-        if (msg != null) {
+        if (msg.length() > 0) {
             buf.append(", ");
             buf.append(msg);
         }
