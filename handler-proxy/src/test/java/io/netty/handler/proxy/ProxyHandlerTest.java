@@ -258,7 +258,6 @@ public class ProxyHandlerTest {
                         DESTINATION, "unexpected authScheme: AUTH_PASSWORD",
                         new Socks5ProxyHandler(socks5Proxy.address())),
 
-                // Tests for authenticated SOCKS5 proxy connections
                 new SuccessTestItem(
                         "SOCKS5: successful connection",
                         DESTINATION,
@@ -274,7 +273,6 @@ public class ProxyHandlerTest {
                         DESTINATION, "authStatus: FAILURE",
                         new Socks5ProxyHandler(socks5Proxy.address(), BAD_USERNAME, BAD_PASSWORD)),
 
-                // Test for an unresponsive SOCKS5 proxy connection.
                 new TimeoutTestItem(
                         "SOCKS5: timeout",
                         new Socks5ProxyHandler(deadSocks5Proxy.address()))
