@@ -62,17 +62,20 @@ public class RecyclerTest {
         }
     }
 
-    /* https://github.com/netty/netty/issues/2848 */
+    /**
+     * Test to make sure bug #2848 never happens again
+     * https://github.com/netty/netty/issues/2848
+     */
     @Test
-    public void testMaxCapcity() {
-        testMaxCapcity(300);
+    public void testMaxCapacity() {
+        testMaxCapacity(300);
         Random rand = new Random();
         for (int i = 0; i < 50; i++) {
-            testMaxCapcity(rand.nextInt(1000) + 256); // 256 - 1256
+            testMaxCapacity(rand.nextInt(1000) + 256); // 256 - 1256
         }
     }
 
-    void testMaxCapcity(int maxCapacity) {
+    void testMaxCapacity(int maxCapacity) {
         Recycler<HandledObject> recycler = new Recycler<HandledObject>(maxCapacity) {
             @Override
             protected HandledObject newObject(
