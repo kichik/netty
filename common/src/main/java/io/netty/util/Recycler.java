@@ -96,7 +96,7 @@ public abstract class Recycler<T> {
         return true;
     }
 
-    public final int threadCapacity() {
+    final int threadLocalCapacity() {
         return threadLocal.get().elements.length;
     }
 
@@ -343,7 +343,7 @@ public abstract class Recycler<T> {
             item.recycleId = item.lastRecycledId = OWN_THREAD_ID;
 
             int size = this.size;
-            if (size >= maxCapacity) {
+            if (size == maxCapacity) {
                 // Hit the maximum capacity - drop the possibly youngest object.
                 return;
             }

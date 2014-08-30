@@ -15,6 +15,8 @@
 */
 package io.netty.util;
 
+import java.util.Random;
+
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -60,9 +62,18 @@ public class RecyclerTest {
         }
     }
 
+    /* https://github.com/netty/netty/issues/2848 */
     @Test
     public void testMaxCapcity() {
-        Recycler<HandledObject> recycler = new Recycler<HandledObject>(300) {
+        testMaxCapcity(300);
+        Random rand = new Random();
+        for (int i = 0; i < 50; i++) {
+            testMaxCapcity(rand.nextInt(1000) + 256); // 256 - 1256
+        }
+    }
+
+    void testMaxCapcity(int maxCapacity) {
+        Recycler<HandledObject> recycler = new Recycler<HandledObject>(maxCapacity) {
             @Override
             protected HandledObject newObject(
                     Recycler.Handle<HandledObject> handle) {
@@ -70,7 +81,7 @@ public class RecyclerTest {
             }
         };
 
-        HandledObject[] objects = new HandledObject[1000];
+        HandledObject[] objects = new HandledObject[maxCapacity * 3];
         for (int i = 0; i < objects.length; i++) {
             objects[i] = recycler.get();
         }
@@ -80,10 +91,10 @@ public class RecyclerTest {
             objects[i] = null;
         }
 
-        Assert.assertEquals(300, recycler.threadCapacity());
+        Assert.assertEquals(maxCapacity, recycler.threadLocalCapacity());
     }
 
-    public static class HandledObject {
+    static final class HandledObject {
         Recycler.Handle<HandledObject> handle;
 
         HandledObject(Recycler.Handle<HandledObject> handle) {
