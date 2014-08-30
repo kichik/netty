@@ -55,6 +55,7 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.CountDownLatch;
@@ -123,145 +124,170 @@ public class ProxyHandlerTest {
 
     @Parameters(name = "{index}: {0}")
     public static List<Object[]> testItems() {
-        List<TestItem> items = new ArrayList<TestItem>();
+        List<TestItem> items = Arrays.asList(
 
-        // HTTP --------------------------------------------------------------
+                // HTTP -------------------------------------------------------
 
-        // Tests for anonymous HTTP proxy connections
-        items.add(new SuccessTestItem(
-                DESTINATION,
-                new HttpProxyHandler(anonHttpProxy.address())));
+                new SuccessTestItem(
+                        "Anonymous HTTP proxy: successful connection",
+                        DESTINATION,
+                        new HttpProxyHandler(anonHttpProxy.address())),
 
-        items.add(new FailureTestItem(
-                BAD_DESTINATION, "status: 403",
-                new HttpProxyHandler(anonHttpProxy.address())));
+                new FailureTestItem(
+                        "Anonymous HTTP proxy: rejected connection",
+                        BAD_DESTINATION, "status: 403",
+                        new HttpProxyHandler(anonHttpProxy.address())),
 
-        items.add(new FailureTestItem(
-                DESTINATION, "status: 401",
-                new HttpProxyHandler(httpProxy.address())));
+                new FailureTestItem(
+                        "HTTP proxy: rejected anonymous connection",
+                        DESTINATION, "status: 401",
+                        new HttpProxyHandler(httpProxy.address())),
 
-        // Tests for authenticated HTTP proxy connections
-        items.add(new SuccessTestItem(
-                DESTINATION,
-                new HttpProxyHandler(httpProxy.address(), USERNAME, PASSWORD)));
+                new SuccessTestItem(
+                        "HTTP proxy: successful connection",
+                        DESTINATION,
+                        new HttpProxyHandler(httpProxy.address(), USERNAME, PASSWORD)),
 
-        items.add(new FailureTestItem(
-                BAD_DESTINATION, "status: 403",
-                new HttpProxyHandler(httpProxy.address(), USERNAME, PASSWORD)));
+                new FailureTestItem(
+                        "HTTP proxy: rejected connection",
+                        BAD_DESTINATION, "status: 403",
+                        new HttpProxyHandler(httpProxy.address(), USERNAME, PASSWORD)),
 
-        items.add(new FailureTestItem(
-                DESTINATION, "status: 401",
-                new HttpProxyHandler(httpProxy.address(), BAD_USERNAME, BAD_PASSWORD)));
+                new FailureTestItem(
+                        "HTTP proxy: authentication failure",
+                        DESTINATION, "status: 401",
+                        new HttpProxyHandler(httpProxy.address(), BAD_USERNAME, BAD_PASSWORD)),
 
-        // Test for an unresponsive HTTP proxy connection.
-        items.add(new TimeoutTestItem(new HttpProxyHandler(deadHttpProxy.address())));
+                new TimeoutTestItem(
+                        "HTTP proxy: timeout",
+                        new HttpProxyHandler(deadHttpProxy.address())),
 
-        // HTTPS --------------------------------------------------------------
+                // HTTPS ------------------------------------------------------
 
-        // Tests for anonymous HTTPS proxy connections
-        items.add(new SuccessTestItem(
-                DESTINATION,
-                clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
-                new HttpProxyHandler(anonHttpsProxy.address())));
+                new SuccessTestItem(
+                        "Anonymous HTTPS proxy: successful connection",
+                        DESTINATION,
+                        clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
+                        new HttpProxyHandler(anonHttpsProxy.address())),
 
-        items.add(new FailureTestItem(
-                BAD_DESTINATION, "status: 403",
-                clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
-                new HttpProxyHandler(anonHttpsProxy.address())));
+                new FailureTestItem(
+                        "Anonymous HTTPS proxy: rejected connection",
+                        BAD_DESTINATION, "status: 403",
+                        clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
+                        new HttpProxyHandler(anonHttpsProxy.address())),
 
-        items.add(new FailureTestItem(
-                DESTINATION, "status: 401",
-                clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
-                new HttpProxyHandler(httpsProxy.address())));
+                new FailureTestItem(
+                        "HTTPS proxy: rejected anonymous connection",
+                        DESTINATION, "status: 401",
+                        clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
+                        new HttpProxyHandler(httpsProxy.address())),
 
-        // Tests for authenticated HTTPS proxy connections
-        items.add(new SuccessTestItem(
-                DESTINATION,
-                clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
-                new HttpProxyHandler(httpsProxy.address(), USERNAME, PASSWORD)));
+                new SuccessTestItem(
+                        "HTTPS proxy: successful connection",
+                        DESTINATION,
+                        clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
+                        new HttpProxyHandler(httpsProxy.address(), USERNAME, PASSWORD)),
 
-        items.add(new FailureTestItem(
-                BAD_DESTINATION, "status: 403",
-                clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
-                new HttpProxyHandler(httpsProxy.address(), USERNAME, PASSWORD)));
+                new FailureTestItem(
+                        "HTTPS proxy: rejected connection",
+                        BAD_DESTINATION, "status: 403",
+                        clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
+                        new HttpProxyHandler(httpsProxy.address(), USERNAME, PASSWORD)),
 
-        items.add(new FailureTestItem(
-                DESTINATION, "status: 401",
-                clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
-                new HttpProxyHandler(httpsProxy.address(), BAD_USERNAME, BAD_PASSWORD)));
+                new FailureTestItem(
+                        "HTTPS proxy: authentication failure",
+                        DESTINATION, "status: 401",
+                        clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
+                        new HttpProxyHandler(httpsProxy.address(), BAD_USERNAME, BAD_PASSWORD)),
 
-        // Test for an unresponsive HTTPS proxy connection.
-        items.add(new TimeoutTestItem(
-                clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
-                new HttpProxyHandler(deadHttpsProxy.address())));
+                new TimeoutTestItem(
+                        "HTTPS proxy: timeout",
+                        clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
+                        new HttpProxyHandler(deadHttpsProxy.address())),
 
-        // SOCKS4 ------------------------------------------------------------
+                // SOCKS4 -----------------------------------------------------
 
-        // Tests for anonymous SOCKS4 proxy connections
-        items.add(new SuccessTestItem(
-                DESTINATION,
-                new Socks4ProxyHandler(anonSocks4Proxy.address())));
+                new SuccessTestItem(
+                        "Anonymous SOCKS4: successful connection",
+                        DESTINATION,
+                        new Socks4ProxyHandler(anonSocks4Proxy.address())),
 
-        items.add(new FailureTestItem(
-                BAD_DESTINATION, "cmdStatus: REJECTED_OR_FAILED",
-                new Socks4ProxyHandler(anonSocks4Proxy.address())));
+                new FailureTestItem(
+                        "Anonymous SOCKS4: rejected connection",
+                        BAD_DESTINATION, "cmdStatus: REJECTED_OR_FAILED",
+                        new Socks4ProxyHandler(anonSocks4Proxy.address())),
 
-        items.add(new FailureTestItem(
-                DESTINATION, "cmdStatus: IDENTD_AUTH_FAILURE",
-                new Socks4ProxyHandler(socks4Proxy.address())));
+                new FailureTestItem(
+                        "SOCKS4: rejected anonymous connection",
+                        DESTINATION, "cmdStatus: IDENTD_AUTH_FAILURE",
+                        new Socks4ProxyHandler(socks4Proxy.address())),
 
-        // Tests for authenticated HTTP proxy connections
-        items.add(new SuccessTestItem(
-                DESTINATION,
-                new Socks4ProxyHandler(socks4Proxy.address(), USERNAME)));
+                new SuccessTestItem(
+                        "SOCKS4: successful connection",
+                        DESTINATION,
+                        new Socks4ProxyHandler(socks4Proxy.address(), USERNAME)),
 
-        items.add(new FailureTestItem(
-                BAD_DESTINATION, "cmdStatus: REJECTED_OR_FAILED",
-                new Socks4ProxyHandler(socks4Proxy.address(), USERNAME)));
+                new FailureTestItem(
+                        "SOCKS4: rejected connection",
+                        BAD_DESTINATION, "cmdStatus: REJECTED_OR_FAILED",
+                        new Socks4ProxyHandler(socks4Proxy.address(), USERNAME)),
 
-        items.add(new FailureTestItem(
-                DESTINATION, "cmdStatus: IDENTD_AUTH_FAILURE",
-                new Socks4ProxyHandler(socks4Proxy.address(), BAD_USERNAME)));
+                new FailureTestItem(
+                        "SOCKS4: authentication failure",
+                        DESTINATION, "cmdStatus: IDENTD_AUTH_FAILURE",
+                        new Socks4ProxyHandler(socks4Proxy.address(), BAD_USERNAME)),
 
-        // Test for an unresponsive HTTP proxy connection.
-        items.add(new TimeoutTestItem(new Socks4ProxyHandler(deadSocks4Proxy.address())));
+                new TimeoutTestItem(
+                        "SOCKS4: timeout",
+                        new Socks4ProxyHandler(deadSocks4Proxy.address())),
 
-        // SOCKS5 ------------------------------------------------------------
+                // SOCKS5 -----------------------------------------------------
 
-        // Tests for anonymous SOCKS5 proxy connections
-        items.add(new SuccessTestItem(
-                DESTINATION,
-                new Socks5ProxyHandler(anonSocks5Proxy.address())));
+                new SuccessTestItem(
+                        "Anonymous SOCKS5: successful connection",
+                        DESTINATION,
+                        new Socks5ProxyHandler(anonSocks5Proxy.address())),
 
-        items.add(new FailureTestItem(
-                BAD_DESTINATION, "cmdStatus: FORBIDDEN",
-                new Socks5ProxyHandler(anonSocks5Proxy.address())));
+                new FailureTestItem(
+                        "Anonymous SOCKS5: rejected connection",
+                        BAD_DESTINATION, "cmdStatus: FORBIDDEN",
+                        new Socks5ProxyHandler(anonSocks5Proxy.address())),
 
-        items.add(new FailureTestItem(
-                DESTINATION, "unexpected authScheme: AUTH_PASSWORD",
-                new Socks5ProxyHandler(socks5Proxy.address())));
+                new FailureTestItem(
+                        "SOCKS5: rejected anonymous connection",
+                        DESTINATION, "unexpected authScheme: AUTH_PASSWORD",
+                        new Socks5ProxyHandler(socks5Proxy.address())),
 
-        // Tests for authenticated SOCKS5 proxy connections
-        items.add(new SuccessTestItem(
-                DESTINATION,
-                new Socks5ProxyHandler(socks5Proxy.address(), USERNAME, PASSWORD)));
+                // Tests for authenticated SOCKS5 proxy connections
+                new SuccessTestItem(
+                        "SOCKS5: successful connection",
+                        DESTINATION,
+                        new Socks5ProxyHandler(socks5Proxy.address(), USERNAME, PASSWORD)),
 
-        items.add(new FailureTestItem(
-                BAD_DESTINATION, "cmdStatus: FORBIDDEN",
-                new Socks5ProxyHandler(socks5Proxy.address(), USERNAME, PASSWORD)));
+                new FailureTestItem(
+                        "SOCKS5: rejected connection",
+                        BAD_DESTINATION, "cmdStatus: FORBIDDEN",
+                        new Socks5ProxyHandler(socks5Proxy.address(), USERNAME, PASSWORD)),
 
-        items.add(new FailureTestItem(
-                DESTINATION, "authStatus: FAILURE",
-                new Socks5ProxyHandler(socks5Proxy.address(), BAD_USERNAME, BAD_PASSWORD)));
+                new FailureTestItem(
+                        "SOCKS5: authentication failure",
+                        DESTINATION, "authStatus: FAILURE",
+                        new Socks5ProxyHandler(socks5Proxy.address(), BAD_USERNAME, BAD_PASSWORD)),
 
-        // Test for an unresponsive SOCKS5 proxy connection.
-        items.add(new TimeoutTestItem(new Socks5ProxyHandler(deadSocks5Proxy.address())));
+                // Test for an unresponsive SOCKS5 proxy connection.
+                new TimeoutTestItem(
+                        "SOCKS5: timeout",
+                        new Socks5ProxyHandler(deadSocks5Proxy.address()))
+        );
 
         // Convert the test items to the list of constructor parameters.
         List<Object[]> params = new ArrayList<Object[]>(items.size());
         for (TestItem i: items) {
             params.add(new Object[] { i });
         }
+
+        // Randomize the execution order to increase the possibility of exposing failure dependencies.
+        Collections.shuffle(params);
 
         return params;
     }
@@ -384,15 +410,17 @@ public class ProxyHandlerTest {
     }
 
     private abstract static class TestItem {
-        protected final InetSocketAddress destination;
-        protected final ChannelHandler[] clientHandlers;
+        final String name;
+        final InetSocketAddress destination;
+        final ChannelHandler[] clientHandlers;
 
-        protected TestItem(InetSocketAddress destination, ChannelHandler... clientHandlers) {
+        protected TestItem(String name, InetSocketAddress destination, ChannelHandler... clientHandlers) {
+            this.name = name;
             this.destination = destination;
             this.clientHandlers = clientHandlers;
         }
 
-        protected abstract void test() throws Exception;
+        abstract void test() throws Exception;
 
         protected void assertProxyHandlers(boolean success) {
             for (ChannelHandler h: clientHandlers) {
@@ -426,12 +454,17 @@ public class ProxyHandlerTest {
                 }
             }
         }
+
+        @Override
+        public String toString() {
+            return name;
+        }
     }
 
     private static final class SuccessTestItem extends TestItem {
 
-        SuccessTestItem(InetSocketAddress destination, ChannelHandler... clientHandlers) {
-            super(destination, clientHandlers);
+        SuccessTestItem(String name, InetSocketAddress destination, ChannelHandler... clientHandlers) {
+            super(name, destination, clientHandlers);
         }
 
         @Override
@@ -474,8 +507,9 @@ public class ProxyHandlerTest {
 
         private final String expectedMessage;
 
-        FailureTestItem(InetSocketAddress destination, String expectedMessage, ChannelHandler... clientHandlers) {
-            super(destination, clientHandlers);
+        FailureTestItem(
+                String name, InetSocketAddress destination, String expectedMessage, ChannelHandler... clientHandlers) {
+            super(name, destination, clientHandlers);
             this.expectedMessage = expectedMessage;
         }
 
@@ -512,8 +546,8 @@ public class ProxyHandlerTest {
 
     private static final class TimeoutTestItem extends TestItem {
 
-        TimeoutTestItem(ChannelHandler... clientHandlers) {
-            super(null, clientHandlers);
+        TimeoutTestItem(String name, ChannelHandler... clientHandlers) {
+            super(name, null, clientHandlers);
         }
 
         @Override
