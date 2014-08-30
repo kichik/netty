@@ -43,7 +43,9 @@ import io.netty.util.internal.EmptyArrays;
 import io.netty.util.internal.StringUtil;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
+import org.junit.After;
 import org.junit.AfterClass;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -51,7 +53,8 @@ import org.junit.runners.Parameterized.Parameters;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.CountDownLatch;
@@ -111,6 +114,13 @@ public class ProxyHandlerTest {
     static final ProxyServer socks5Proxy =
             new Socks5ProxyServer(false, TestMode.TERMINAL, DESTINATION, USERNAME, PASSWORD);
 
+    private static final Collection<ProxyServer> allProxies = Arrays.asList(
+            deadHttpProxy, anonHttpProxy, httpProxy,
+            deadHttpsProxy, anonHttpsProxy, httpsProxy,
+            deadSocks4Proxy, anonSocks4Proxy, socks4Proxy,
+            deadSocks5Proxy, anonSocks5Proxy, socks5Proxy
+    );
+
     @Parameters(name = "{index}: {0}")
     public static List<Object[]> testItems() {
         List<TestItem> items = new ArrayList<TestItem>();
@@ -119,71 +129,69 @@ public class ProxyHandlerTest {
 
         // Tests for anonymous HTTP proxy connections
         items.add(new SuccessTestItem(
-                anonHttpProxy, DESTINATION,
+                DESTINATION,
                 new HttpProxyHandler(anonHttpProxy.address())));
 
         items.add(new FailureTestItem(
-                anonHttpProxy, BAD_DESTINATION, "status: 403",
+                BAD_DESTINATION, "status: 403",
                 new HttpProxyHandler(anonHttpProxy.address())));
 
         items.add(new FailureTestItem(
-                httpProxy, DESTINATION, "status: 401",
+                DESTINATION, "status: 401",
                 new HttpProxyHandler(httpProxy.address())));
 
         // Tests for authenticated HTTP proxy connections
         items.add(new SuccessTestItem(
-                httpProxy, DESTINATION,
+                DESTINATION,
                 new HttpProxyHandler(httpProxy.address(), USERNAME, PASSWORD)));
 
         items.add(new FailureTestItem(
-                httpProxy, BAD_DESTINATION, "status: 403",
+                BAD_DESTINATION, "status: 403",
                 new HttpProxyHandler(httpProxy.address(), USERNAME, PASSWORD)));
 
         items.add(new FailureTestItem(
-                httpProxy, DESTINATION, "status: 401",
+                DESTINATION, "status: 401",
                 new HttpProxyHandler(httpProxy.address(), BAD_USERNAME, BAD_PASSWORD)));
 
         // Test for an unresponsive HTTP proxy connection.
-        items.add(new TimeoutTestItem(
-                deadHttpProxy, new HttpProxyHandler(deadHttpProxy.address())));
+        items.add(new TimeoutTestItem(new HttpProxyHandler(deadHttpProxy.address())));
 
         // HTTPS --------------------------------------------------------------
 
         // Tests for anonymous HTTPS proxy connections
         items.add(new SuccessTestItem(
-                anonHttpsProxy, DESTINATION,
+                DESTINATION,
                 clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
                 new HttpProxyHandler(anonHttpsProxy.address())));
 
         items.add(new FailureTestItem(
-                anonHttpsProxy, BAD_DESTINATION, "status: 403",
+                BAD_DESTINATION, "status: 403",
                 clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
                 new HttpProxyHandler(anonHttpsProxy.address())));
 
         items.add(new FailureTestItem(
-                httpsProxy, DESTINATION, "status: 401",
+                DESTINATION, "status: 401",
                 clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
                 new HttpProxyHandler(httpsProxy.address())));
 
         // Tests for authenticated HTTPS proxy connections
         items.add(new SuccessTestItem(
-                httpsProxy, DESTINATION,
+                DESTINATION,
                 clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
                 new HttpProxyHandler(httpsProxy.address(), USERNAME, PASSWORD)));
 
         items.add(new FailureTestItem(
-                httpsProxy, BAD_DESTINATION, "status: 403",
+                BAD_DESTINATION, "status: 403",
                 clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
                 new HttpProxyHandler(httpsProxy.address(), USERNAME, PASSWORD)));
 
         items.add(new FailureTestItem(
-                httpsProxy, DESTINATION, "status: 401",
+                DESTINATION, "status: 401",
                 clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
                 new HttpProxyHandler(httpsProxy.address(), BAD_USERNAME, BAD_PASSWORD)));
 
         // Test for an unresponsive HTTPS proxy connection.
         items.add(new TimeoutTestItem(
-                deadHttpsProxy,
                 clientSslCtx.newHandler(PooledByteBufAllocator.DEFAULT),
                 new HttpProxyHandler(deadHttpsProxy.address())));
 
@@ -191,65 +199,63 @@ public class ProxyHandlerTest {
 
         // Tests for anonymous SOCKS4 proxy connections
         items.add(new SuccessTestItem(
-                anonSocks4Proxy, DESTINATION,
+                DESTINATION,
                 new Socks4ProxyHandler(anonSocks4Proxy.address())));
 
         items.add(new FailureTestItem(
-                anonSocks4Proxy, BAD_DESTINATION, "REJECTED_OR_FAILED",
+                BAD_DESTINATION, "cmdStatus: REJECTED_OR_FAILED",
                 new Socks4ProxyHandler(anonSocks4Proxy.address())));
 
         items.add(new FailureTestItem(
-                socks4Proxy, DESTINATION, "IDENTD_AUTH_FAILURE",
+                DESTINATION, "cmdStatus: IDENTD_AUTH_FAILURE",
                 new Socks4ProxyHandler(socks4Proxy.address())));
 
         // Tests for authenticated HTTP proxy connections
         items.add(new SuccessTestItem(
-                socks4Proxy, DESTINATION,
+                DESTINATION,
                 new Socks4ProxyHandler(socks4Proxy.address(), USERNAME)));
 
         items.add(new FailureTestItem(
-                socks4Proxy, BAD_DESTINATION, "REJECTED_OR_FAILED",
+                BAD_DESTINATION, "cmdStatus: REJECTED_OR_FAILED",
                 new Socks4ProxyHandler(socks4Proxy.address(), USERNAME)));
 
         items.add(new FailureTestItem(
-                socks4Proxy, DESTINATION, "IDENTD_AUTH_FAILURE",
+                DESTINATION, "cmdStatus: IDENTD_AUTH_FAILURE",
                 new Socks4ProxyHandler(socks4Proxy.address(), BAD_USERNAME)));
 
         // Test for an unresponsive HTTP proxy connection.
-        items.add(new TimeoutTestItem(
-                deadSocks4Proxy, new Socks4ProxyHandler(deadSocks4Proxy.address())));
+        items.add(new TimeoutTestItem(new Socks4ProxyHandler(deadSocks4Proxy.address())));
 
         // SOCKS5 ------------------------------------------------------------
 
         // Tests for anonymous SOCKS5 proxy connections
         items.add(new SuccessTestItem(
-                anonSocks5Proxy, DESTINATION,
+                DESTINATION,
                 new Socks5ProxyHandler(anonSocks5Proxy.address())));
 
         items.add(new FailureTestItem(
-                anonSocks5Proxy, BAD_DESTINATION, "cmdStatus: FORBIDDEN",
+                BAD_DESTINATION, "cmdStatus: FORBIDDEN",
                 new Socks5ProxyHandler(anonSocks5Proxy.address())));
 
         items.add(new FailureTestItem(
-                socks5Proxy, DESTINATION, "unexpected authScheme: AUTH_PASSWORD",
+                DESTINATION, "unexpected authScheme: AUTH_PASSWORD",
                 new Socks5ProxyHandler(socks5Proxy.address())));
 
         // Tests for authenticated SOCKS5 proxy connections
         items.add(new SuccessTestItem(
-                socks5Proxy, DESTINATION,
+                DESTINATION,
                 new Socks5ProxyHandler(socks5Proxy.address(), USERNAME, PASSWORD)));
 
         items.add(new FailureTestItem(
-                socks5Proxy, BAD_DESTINATION, "cmdStatus: FORBIDDEN",
+                BAD_DESTINATION, "cmdStatus: FORBIDDEN",
                 new Socks5ProxyHandler(socks5Proxy.address(), USERNAME, PASSWORD)));
 
         items.add(new FailureTestItem(
-                socks5Proxy, DESTINATION, "authStatus: FAILURE",
+                DESTINATION, "authStatus: FAILURE",
                 new Socks5ProxyHandler(socks5Proxy.address(), BAD_USERNAME, BAD_PASSWORD)));
 
         // Test for an unresponsive SOCKS5 proxy connection.
-        items.add(new TimeoutTestItem(
-                deadSocks5Proxy, new Socks5ProxyHandler(deadSocks5Proxy.address())));
+        items.add(new TimeoutTestItem(new Socks5ProxyHandler(deadSocks5Proxy.address())));
 
         // Convert the test items to the list of constructor parameters.
         List<Object[]> params = new ArrayList<Object[]>(items.size());
@@ -261,26 +267,10 @@ public class ProxyHandlerTest {
     }
 
     @AfterClass
-    public static void stopProxyServers() {
-        // HTTP proxy servers
-        httpProxy.stop();
-        anonHttpProxy.stop();
-        deadHttpProxy.stop();
-
-        // HTTPS proxy servers
-        httpsProxy.stop();
-        anonHttpsProxy.stop();
-        deadHttpsProxy.stop();
-
-        // SOCKS4 proxy servers
-        socks4Proxy.stop();
-        anonSocks4Proxy.stop();
-        deadSocks4Proxy.stop();
-
-        // SOCKS5 proxy servers
-        socks5Proxy.stop();
-        anonSocks5Proxy.stop();
-        deadSocks5Proxy.stop();
+    public static void stopServers() {
+        for (ProxyServer p: allProxies) {
+            p.stop();
+        }
     }
 
     private final TestItem testItem;
@@ -289,10 +279,25 @@ public class ProxyHandlerTest {
         this.testItem = testItem;
     }
 
+    @Before
+    public void clearServerExceptions() throws Exception {
+        for (ProxyServer p: allProxies) {
+            p.clearExceptions();
+        }
+    }
+
     @Test
     public void test() throws Exception {
         testItem.test();
     }
+
+    @After
+    public void checkServerExceptions() throws Exception {
+        for (ProxyServer p: allProxies) {
+            p.checkExceptions();
+        }
+    }
+
     private static final class SuccessTestHandler extends SimpleChannelInboundHandler<Object> {
 
         final Queue<String> received = new LinkedBlockingQueue<String>();
@@ -379,34 +384,15 @@ public class ProxyHandlerTest {
     }
 
     private abstract static class TestItem {
-        protected final List<ProxyServer> servers;
         protected final InetSocketAddress destination;
         protected final ChannelHandler[] clientHandlers;
 
-        protected TestItem(ProxyServer server, InetSocketAddress destination, ChannelHandler... clientHandlers) {
-            this(Collections.singletonList(server), destination, clientHandlers);
-        }
-
-        protected TestItem(
-                List<ProxyServer> servers, InetSocketAddress destination, ChannelHandler... clientHandlers) {
-            this.servers = servers;
+        protected TestItem(InetSocketAddress destination, ChannelHandler... clientHandlers) {
             this.destination = destination;
             this.clientHandlers = clientHandlers;
         }
 
-        final void test() throws Exception {
-            for (ProxyServer s: servers) {
-                s.clearExceptions();
-            }
-
-            doTest();
-
-            for (ProxyServer s: servers) {
-                s.checkExceptions();
-            }
-        }
-
-        protected abstract void doTest() throws Exception;
+        protected abstract void test() throws Exception;
 
         protected void assertProxyHandlers(boolean success) {
             for (ChannelHandler h: clientHandlers) {
@@ -444,16 +430,12 @@ public class ProxyHandlerTest {
 
     private static final class SuccessTestItem extends TestItem {
 
-        SuccessTestItem(ProxyServer server, InetSocketAddress destination, ChannelHandler... clientHandlers) {
-            super(server, destination, clientHandlers);
-        }
-
-        SuccessTestItem(List<ProxyServer> servers, InetSocketAddress destination, ChannelHandler... clientHandlers) {
-            super(servers, destination, clientHandlers);
+        SuccessTestItem(InetSocketAddress destination, ChannelHandler... clientHandlers) {
+            super(destination, clientHandlers);
         }
 
         @Override
-        protected void doTest() throws Exception {
+        protected void test() throws Exception {
             final SuccessTestHandler testHandler = new SuccessTestHandler();
             Bootstrap b = new Bootstrap();
             b.group(group);
@@ -492,20 +474,13 @@ public class ProxyHandlerTest {
 
         private final String expectedMessage;
 
-        FailureTestItem(ProxyServer server, InetSocketAddress destination, String expectedMessage,
-                        ChannelHandler... clientHandlers) {
-            super(server, destination, clientHandlers);
-            this.expectedMessage = expectedMessage;
-        }
-
-        FailureTestItem(List<ProxyServer> servers, InetSocketAddress destination, String expectedMessage,
-                        ChannelHandler... clientHandlers) {
-            super(servers, destination, clientHandlers);
+        FailureTestItem(InetSocketAddress destination, String expectedMessage, ChannelHandler... clientHandlers) {
+            super(destination, clientHandlers);
             this.expectedMessage = expectedMessage;
         }
 
         @Override
-        protected void doTest() throws Exception {
+        protected void test() throws Exception {
             final FailureTestHandler testHandler = new FailureTestHandler();
             Bootstrap b = new Bootstrap();
             b.group(group);
@@ -537,16 +512,12 @@ public class ProxyHandlerTest {
 
     private static final class TimeoutTestItem extends TestItem {
 
-        TimeoutTestItem(ProxyServer server, ChannelHandler... clientHandlers) {
-            super(server, null, clientHandlers);
-        }
-
-        TimeoutTestItem(List<ProxyServer> servers, ChannelHandler... clientHandlers) {
-            super(servers, null, clientHandlers);
+        TimeoutTestItem(ChannelHandler... clientHandlers) {
+            super(null, clientHandlers);
         }
 
         @Override
-        protected void doTest() throws Exception {
+        protected void test() throws Exception {
             final long TIMEOUT = 2000;
             for (ChannelHandler h: clientHandlers) {
                 if (h instanceof ProxyHandler) {
