@@ -59,4 +59,36 @@ public class RecyclerTest {
             RECYCLER.recycle(this, handle);
         }
     }
+
+    @Test
+    public void testMaxCapcity() {
+        Recycler<HandledObject> recycler = new Recycler<HandledObject>(300) {
+            @Override
+            protected HandledObject newObject(
+                    Recycler.Handle<HandledObject> handle) {
+                return new HandledObject(handle);
+            }
+
+        };
+
+        HandledObject[] objects = new HandledObject[1000];
+        for (int i = 0; i < objects.length; i++) {
+            objects[i] = recycler.get();
+        }
+
+        for (int i = 0; i < objects.length; i++) {
+            recycler.recycle(objects[i], objects[i].handle);
+            objects[i] = null;
+        }
+
+        Assert.assertEquals(300, recycler.threadCapacity());
+    }
+
+    public static class HandledObject {
+        Recycler.Handle<HandledObject> handle;
+
+        HandledObject(Recycler.Handle<HandledObject> handle) {
+            this.handle = handle;
+        }
+    }
 }
