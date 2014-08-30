@@ -16,12 +16,9 @@
 
 package io.netty.handler.proxy;
 
-import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
-import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LineBasedFrameDecoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressType;
@@ -64,7 +61,7 @@ public class Socks5ProxyServer extends ProxyServer {
         case TERMINAL:
             p.addLast("decoder", new Socks5InitRequestDecoder());
             p.addLast("encoder", Socks5MessageEncoder.INSTANCE);
-            p.addLast(new TerminalHandler());
+            p.addLast(new Socks5TerminalHandler());
             break;
         case UNRESPONSIVE:
             p.addLast(UnresponsiveHandler.INSTANCE);
@@ -72,28 +69,12 @@ public class Socks5ProxyServer extends ProxyServer {
         }
     }
 
-    private final class TerminalHandler extends SimpleChannelInboundHandler<Object> {
+    private final class Socks5TerminalHandler extends TerminalHandler {
 
         private boolean authenticated;
-        private boolean finished;
 
         @Override
-        protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
-            if (finished) {
-                String str = ((ByteBuf) msg).toString(CharsetUtil.US_ASCII);
-                if ("A\n".equals(str)) {
-                    ctx.write(Unpooled.copiedBuffer("1\n", CharsetUtil.US_ASCII));
-                } else if ("B\n".equals(str)) {
-                    ctx.write(Unpooled.copiedBuffer("2\n", CharsetUtil.US_ASCII));
-                } else if ("C\n".equals(str)) {
-                    ctx.write(Unpooled.copiedBuffer("3\n", CharsetUtil.US_ASCII))
-                       .addListener(ChannelFutureListener.CLOSE);
-                } else {
-                    throw new IllegalStateException("unexpected message: " + str);
-                }
-                return;
-            }
-
+        protected boolean handleProxyProtocol(ChannelHandlerContext ctx, Object msg) throws Exception {
             if (!authenticated) {
                 if (username == null) {
                     ctx.pipeline().addBefore("encoder", "decoder", new Socks5CmdRequestDecoder());
@@ -115,10 +96,8 @@ public class Socks5ProxyServer extends ProxyServer {
                         }
                     }
                 }
-                return;
+                return false;
             }
-
-            finished = true;
 
             Socks5CmdRequest req = (Socks5CmdRequest) msg;
             assertThat(req.cmdType(), is(Socks5CmdType.CONNECT));
@@ -141,17 +120,8 @@ public class Socks5ProxyServer extends ProxyServer {
             if (sendGreeting) {
                 ctx.write(Unpooled.copiedBuffer("0\n", CharsetUtil.US_ASCII));
             }
-        }
 
-        @Override
-        public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-            ctx.flush();
-        }
-
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-            recordException(cause);
-            ctx.close();
+            return true;
         }
     }
 }

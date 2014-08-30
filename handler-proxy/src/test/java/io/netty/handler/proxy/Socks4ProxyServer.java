@@ -16,12 +16,9 @@
 
 package io.netty.handler.proxy;
 
-import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
-import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LineBasedFrameDecoder;
 import io.netty.handler.codec.socksx.v4.Socks4CmdRequest;
@@ -55,7 +52,7 @@ public class Socks4ProxyServer extends ProxyServer {
         case TERMINAL:
             p.addLast(new Socks4CmdRequestDecoder());
             p.addLast(Socks4MessageEncoder.INSTANCE);
-            p.addLast(new TerminalHandler());
+            p.addLast(new Socks4TerminalHandler());
             break;
         case UNRESPONSIVE:
             p.addLast(UnresponsiveHandler.INSTANCE);
@@ -63,30 +60,11 @@ public class Socks4ProxyServer extends ProxyServer {
         }
     }
 
-    private final class TerminalHandler extends SimpleChannelInboundHandler<Object> {
-
-        private boolean finished;
-
+    private final class Socks4TerminalHandler extends TerminalHandler {
         @Override
-        protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
-            if (finished) {
-                String str = ((ByteBuf) msg).toString(CharsetUtil.US_ASCII);
-                if ("A\n".equals(str)) {
-                    ctx.write(Unpooled.copiedBuffer("1\n", CharsetUtil.US_ASCII));
-                } else if ("B\n".equals(str)) {
-                    ctx.write(Unpooled.copiedBuffer("2\n", CharsetUtil.US_ASCII));
-                } else if ("C\n".equals(str)) {
-                    ctx.write(Unpooled.copiedBuffer("3\n", CharsetUtil.US_ASCII))
-                       .addListener(ChannelFutureListener.CLOSE);
-                } else {
-                    throw new IllegalStateException("unexpected message: " + str);
-                }
-                return;
-            }
-
+        protected boolean handleProxyProtocol(ChannelHandlerContext ctx, Object msg) throws Exception {
             Socks4CmdRequest req = (Socks4CmdRequest) msg;
             assertThat(req.cmdType(), is(Socks4CmdType.CONNECT));
-            finished = true;
 
             ctx.pipeline().addBefore(ctx.name(), "lineDecoder", new LineBasedFrameDecoder(64, false, true));
 
@@ -115,17 +93,8 @@ public class Socks4ProxyServer extends ProxyServer {
             if (sendGreeting) {
                 ctx.write(Unpooled.copiedBuffer("0\n", CharsetUtil.US_ASCII));
             }
-        }
 
-        @Override
-        public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-            ctx.flush();
-        }
-
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-            recordException(cause);
-            ctx.close();
+            return true;
         }
     }
 }

@@ -17,11 +17,17 @@
 package io.netty.handler.proxy;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
+import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.ServerSocketChannel;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.util.CharsetUtil;
 import io.netty.util.NetUtil;
 import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.logging.InternalLogger;
@@ -47,9 +53,8 @@ public abstract class ProxyServer {
      *
      * @param useSsl {@code true} if and only if implicit SSL is enabled
      * @param testMode the test mode
-     * @param destination the expected destination.
-     *                    If the client requests proxying to a different destination,
-     *                    this server will reject the connection request.
+     * @param destination the expected destination. If the client requests proxying to a different destination, this
+     * server will reject the connection request.
      */
     protected ProxyServer(boolean useSsl, TestMode testMode, InetSocketAddress destination) {
         this(useSsl, testMode, destination, null, null);
@@ -60,15 +65,12 @@ public abstract class ProxyServer {
      *
      * @param useSsl {@code true} if and only if implicit SSL is enabled
      * @param testMode the test mode
-     * @param username the expected username.
-     *                 If the client tries to authenticate with a different username, this server will fail the
-     *                 authentication request.
-     * @param password the expected password.
-     *                 If the client tries to authenticate with a different password, this server will fail the
-     *                 authentication request.
-     * @param destination the expected destination.
-     *                    If the client requests proxying to a different destination,
-     *                    this server will reject the connection request.
+     * @param username the expected username. If the client tries to authenticate with a different username, this server
+     * will fail the authentication request.
+     * @param password the expected password. If the client tries to authenticate with a different password, this server
+     * will fail the authentication request.
+     * @param destination the expected destination. If the client requests proxying to a different destination, this
+     * server will reject the connection request.
      */
     protected ProxyServer(
             final boolean useSsl, TestMode testMode,
@@ -97,13 +99,13 @@ public abstract class ProxyServer {
         ch = (ServerSocketChannel) b.bind(NetUtil.LOCALHOST, 0).syncUninterruptibly().channel();
     }
 
-    public InetSocketAddress address() {
+    public final InetSocketAddress address() {
         return new InetSocketAddress(NetUtil.LOCALHOST, ch.localAddress().getPort());
     }
 
     protected abstract void configure(SocketChannel ch) throws Exception;
 
-    protected void recordException(Throwable t) {
+    final void recordException(Throwable t) {
         logger.warn("Unexpected exception from proxy server:", t);
         recordedExceptions.add(t);
     }
@@ -111,14 +113,14 @@ public abstract class ProxyServer {
     /**
      * Clears all recorded exceptions.
      */
-    public void clearExceptions() {
+    public final void clearExceptions() {
         recordedExceptions.clear();
     }
 
     /**
      * Logs all recorded exceptions and raises the last one so that the caller can fail.
      */
-    public void checkExceptions() {
+    public final void checkExceptions() {
         Throwable t;
         for (;;) {
             t = recordedExceptions.poll();
@@ -136,5 +138,46 @@ public abstract class ProxyServer {
 
     public final void stop() {
         ch.close();
+    }
+
+    protected abstract class TerminalHandler extends SimpleChannelInboundHandler<Object> {
+
+        private boolean finished;
+
+        @Override
+        protected final void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
+            if (finished) {
+                String str = ((ByteBuf) msg).toString(CharsetUtil.US_ASCII);
+                if ("A\n".equals(str)) {
+                    ctx.write(Unpooled.copiedBuffer("1\n", CharsetUtil.US_ASCII));
+                } else if ("B\n".equals(str)) {
+                    ctx.write(Unpooled.copiedBuffer("2\n", CharsetUtil.US_ASCII));
+                } else if ("C\n".equals(str)) {
+                    ctx.write(Unpooled.copiedBuffer("3\n", CharsetUtil.US_ASCII))
+                       .addListener(ChannelFutureListener.CLOSE);
+                } else {
+                    throw new IllegalStateException("unexpected message: " + str);
+                }
+                return;
+            }
+
+            boolean finished = handleProxyProtocol(ctx, msg);
+            if (finished) {
+                this.finished = finished;
+            }
+        }
+
+        protected abstract boolean handleProxyProtocol(ChannelHandlerContext ctx, Object msg) throws Exception;
+
+        @Override
+        public final void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+            ctx.flush();
+        }
+
+        @Override
+        public final void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+            recordException(cause);
+            ctx.close();
+        }
     }
 }
