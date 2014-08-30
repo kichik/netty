@@ -95,7 +95,7 @@ public abstract class Recycler<T> {
         h.recycle(o);
         return true;
     }
-    
+
     public final int threadCapacity() {
         return threadLocal.get().elements.length;
     }

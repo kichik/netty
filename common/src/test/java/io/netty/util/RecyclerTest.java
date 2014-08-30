@@ -68,7 +68,6 @@ public class RecyclerTest {
                     Recycler.Handle<HandledObject> handle) {
                 return new HandledObject(handle);
             }
-
         };
 
         HandledObject[] objects = new HandledObject[1000];
